@@ -12,8 +12,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import CustomUser, Category, Product, Cart, CartItem, Order, OrderItem, StoreSetting, OTPVerification
-from .sms_service import send_otp_sms, clean_indian_phone
+from .models import CustomUser, Category, Product, Cart, CartItem, Order, OrderItem, StoreSetting
 from .serializers import (
     CustomTokenObtainPairSerializer,
     AdminTokenObtainPairSerializer,
@@ -43,25 +42,11 @@ def get_admin_mobile():
     return getattr(settings, 'ADMIN_MOBILE', '7050830610').strip()
 
 
-def mask_phone_number(phone_str):
-    """Returns a masked phone number like ******0610"""
-    if not phone_str:
-        return '******'
-    clean = str(phone_str).strip()
-    if len(clean) <= 4:
-        return '******' + clean
-    return '******' + clean[-4:]
-
-
-def generate_secure_otp():
-    """Generates a cryptographically secure 6-digit random OTP."""
-    return f"{secrets.randbelow(900000) + 100000}"
-
 
 class LoginInitView(views.APIView):
     """
     Direct Authentication Endpoint for Customer and Admin (No OTP required).
-    - Admin: requires strict username/email upurbey753@gmail.com and password Upendra1234.
+    - Admin: authenticates with configured administrator credentials and role verification.
     - Customer: authenticates with registered customer email + password.
     Returns JWT access and refresh tokens directly.
     """
@@ -86,14 +71,14 @@ class LoginInitView(views.APIView):
 
         # Admin login
         if role == 'admin':
-            # Strict Admin credential verification
-            if email_clean != admin_email:
+            # Verify configured admin email if set
+            if admin_email and email_clean != admin_email:
                 return Response(
-                    {'detail': 'Invalid admin credentials. Please enter authorized administrator email.'},
+                    {'detail': 'Invalid admin credentials.'},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
 
-            user = CustomUser.objects.filter(email__iexact=admin_email).first()
+            user = CustomUser.objects.filter(email__iexact=email_clean).first()
             if not user or not user.check_password(password) or not user.is_admin_user or user.role != 'admin':
                 return Response(
                     {'detail': 'Invalid admin credentials.'},
@@ -190,8 +175,8 @@ class RegisterInitView(views.APIView):
         email_clean = email.lower()
         admin_email = get_admin_email()
 
-        # Disallow registering with predefined admin email
-        if email_clean in [admin_email, 'xyz@gmail.com']:
+        # Disallow registering with predefined admin email if configured
+        if admin_email and email_clean == admin_email:
             return Response(
                 {'email': ['This email address is reserved for store administration and cannot be registered as a customer.']},
                 status=status.HTTP_400_BAD_REQUEST
@@ -268,176 +253,6 @@ class RegisterInitView(views.APIView):
                 'profile_image': None,
             }
         }, status=status.HTTP_201_CREATED)
-
-
-class VerifyOTPView(views.APIView):
-    """
-    Step 2: Verify 6-digit OTP.
-    If valid:
-      - For register: Creates and activates Customer user in DB.
-      - For login: Validates user identity & role.
-      - Returns JWT tokens and user profile.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        session_token = request.data.get('session_token', '').strip()
-        otp_code = str(request.data.get('otp_code', '')).strip()
-
-        if not session_token or not otp_code:
-            return Response(
-                {'detail': 'Session token and 6-digit OTP code are required.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        otp_session = OTPVerification.objects.filter(session_token=session_token).first()
-        if not otp_session or otp_session.is_verified:
-            return Response(
-                {'detail': 'Invalid or expired OTP session. Please initiate login/signup again.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if otp_session.is_expired():
-            return Response(
-                {'detail': 'The OTP has expired. Please request a new OTP.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if otp_session.attempts >= otp_session.max_attempts:
-            return Response(
-                {'detail': 'Maximum verification attempts exceeded. Please request a new OTP.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if otp_code != otp_session.otp_code:
-            otp_session.attempts += 1
-            otp_session.save(update_fields=['attempts'])
-            remaining = max(0, otp_session.max_attempts - otp_session.attempts)
-            return Response(
-                {'detail': f'Incorrect OTP entered. {remaining} attempt(s) remaining.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # OTP is valid!
-        otp_session.is_verified = True
-        otp_session.save(update_fields=['is_verified'])
-
-        user = None
-        if otp_session.purpose == 'register':
-            payload = otp_session.payload
-            user = CustomUser.objects.filter(email__iexact=payload['email']).first()
-            if not user:
-                user = CustomUser(
-                    email=payload['email'],
-                    full_name=payload['full_name'],
-                    mobile=payload['mobile'],
-                    password=payload['password_hash'],
-                    role='customer',
-                    is_staff=False,
-                    is_superuser=False,
-                    address=payload.get('address', ''),
-                    village_area=payload.get('village_area', ''),
-                    city=payload.get('city', 'Benipatti'),
-                    state=payload.get('state', 'Bihar'),
-                    pincode=payload.get('pincode', '847213'),
-                )
-                user.save()
-                Cart.objects.get_or_create(user=user)
-        else:
-            user = otp_session.user or CustomUser.objects.filter(email__iexact=otp_session.email).first()
-            if not user:
-                return Response(
-                    {'detail': 'User account not found.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            if otp_session.role == 'admin':
-                admin_email = get_admin_email()
-                if user.email.lower() != admin_email or not user.is_admin_user or user.role != 'admin':
-                    return Response(
-                        {'detail': 'Access Denied: Account is not authorized as Administrator.'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-
-        # Issue JWT Tokens
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'message': 'Authentication successful! Welcome to Upendra General Stores.',
-            'tokens': {
-                'access': str(refresh.access_token),
-                'refresh': str(refresh),
-            },
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'full_name': user.full_name,
-                'mobile': user.mobile,
-                'role': user.role,
-                'is_admin': user.is_admin_user,
-                'address': user.address,
-                'village_area': user.village_area,
-                'city': user.city,
-                'state': user.state,
-                'pincode': user.pincode,
-                'profile_image': user.profile_image.url if user.profile_image else None,
-            }
-        }, status=status.HTTP_200_OK)
-
-
-class ResendOTPView(views.APIView):
-    """
-    Resends a fresh 6-digit OTP with 60-second cooldown protection.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        session_token = request.data.get('session_token', '').strip()
-        if not session_token:
-            return Response(
-                {'detail': 'Session token is required.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        otp_session = OTPVerification.objects.filter(session_token=session_token).first()
-        if not otp_session or otp_session.is_verified:
-            return Response(
-                {'detail': 'Invalid or completed OTP session. Please initiate login/signup again.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        cooldown_seconds = 60
-        now = timezone.now()
-        time_elapsed = (now - otp_session.last_resend_at).total_seconds()
-
-        if time_elapsed < cooldown_seconds:
-            wait_time = int(cooldown_seconds - time_elapsed)
-            return Response(
-                {'detail': f'Please wait {wait_time} second(s) before requesting a new OTP.'},
-                status=status.HTTP_429_TOO_MANY_REQUESTS
-            )
-
-        new_otp = generate_secure_otp()
-
-        # Dispatch OTP via SMS service (Fast2SMS / Twilio / Dev Sandbox)
-        sms_res = send_otp_sms(otp_session.mobile, new_otp, purpose=f"resend_{otp_session.purpose}")
-        if not sms_res.get('success', False):
-            return Response(
-                {'detail': sms_res.get('error', 'SMS delivery failure.')},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE
-            )
-
-        otp_session.otp_code = new_otp
-        otp_session.expires_at = now + timezone.timedelta(minutes=5)
-        otp_session.attempts = 0
-        otp_session.last_resend_at = now
-        otp_session.save()
-
-        return Response({
-            'message': f'A new verification OTP has been sent to {mask_phone_number(otp_session.mobile)}.',
-            'expires_in_seconds': 300,
-            'masked_mobile': mask_phone_number(otp_session.mobile)
-        }, status=status.HTTP_200_OK)
-
 
 
 class CustomTokenObtainPairView(views.APIView):
@@ -985,7 +800,7 @@ class ImageUploadView(views.APIView):
 class CreatePaymentOrderView(views.APIView):
     """
     Initializes a secure Indian payment gateway (Razorpay) order for the specific Order instance.
-    Generates dynamic UPI QR & UPI intent links representing the exact order amount (e.g. ₹499).
+    Generates dynamic UPI QR & UPI intent links representing the exact order amount (e.g. ₹249).
     Never exposes backend secret keys.
     """
     permission_classes = [permissions.AllowAny]

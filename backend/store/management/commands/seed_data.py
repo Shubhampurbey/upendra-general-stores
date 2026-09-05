@@ -27,56 +27,63 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS('[OK] Store settings configured'))
 
-        # 2. Users (Single Predefined Admin & Customer)
+        # 2. Users (Admin from environment/settings & Demo Customer)
         from django.conf import settings
-        admin_email = getattr(settings, 'ADMIN_EMAIL', 'upurbey753@gmail.com').strip()
-        admin_mobile = getattr(settings, 'ADMIN_MOBILE', '7050830610').strip()
-        admin_password = getattr(settings, 'ADMIN_PASSWORD', 'Upendra1234')
+        admin_email = getattr(settings, 'ADMIN_EMAIL', '').strip()
+        admin_mobile = getattr(settings, 'ADMIN_MOBILE', '').strip()
+        admin_password = getattr(settings, 'ADMIN_PASSWORD', '').strip()
 
-        # Remove legacy/test admin accounts (e.g. xyz@gmail.com) and release conflicting mobile if held by old test users
-        CustomUser.objects.filter(email__in=['admin@upendrastores.com', 'xyz@gmail.com']).exclude(email__iexact=admin_email).delete()
-        CustomUser.objects.filter(mobile=admin_mobile).exclude(email__iexact=admin_email).delete()
+        if admin_email and admin_password:
+            admin_user = CustomUser.objects.filter(email__iexact=admin_email).first()
+            if not admin_user:
+                admin_user = CustomUser.objects.create_superuser(
+                    email=admin_email,
+                    password=admin_password,
+                    full_name='Upendra General Stores (Admin)',
+                    mobile=admin_mobile or '9999999999',
+                    role='admin',
+                    address='Near Mahavir Chowk Ganguli, Benipatti',
+                    city='Benipatti',
+                    state='Bihar',
+                    pincode='847213'
+                )
+            else:
+                admin_user.set_password(admin_password)
+                admin_user.role = 'admin'
+                admin_user.is_staff = True
+                admin_user.is_superuser = True
+                if admin_mobile:
+                    admin_user.mobile = admin_mobile
+                admin_user.save()
+            Cart.objects.get_or_create(user=admin_user)
+            self.stdout.write(self.style.SUCCESS(f'[OK] Configured Admin ({admin_email})'))
+        else:
+            self.stdout.write(self.style.WARNING('[NOTICE] ADMIN_EMAIL and ADMIN_PASSWORD not configured. Skipping automated admin creation.'))
 
-        admin_user = CustomUser.objects.filter(email__iexact=admin_email).first()
-        if not admin_user:
-            admin_user = CustomUser.objects.create_superuser(
-                email=admin_email,
-                password=admin_password,
-                full_name='Upendra General Stores (Admin)',
-                mobile=admin_mobile,
-                role='admin',
-                address='Near Mahavir Chowk Ganguli, Benipatti',
+        # Ensure demo customer is created or updated idempotently
+        demo_customer = CustomUser.objects.filter(mobile='9812345678').first() or CustomUser.objects.filter(email='customer@example.com').first()
+        if not demo_customer:
+            demo_customer = CustomUser.objects.create_user(
+                email='customer@example.com',
+                password='Customer@123',
+                full_name='Ramesh Chandra Sharma',
+                mobile='9812345678',
+                role='customer',
+                address='House No. 45, Shanti Kunj, Ward 8',
+                village_area='Shanti Nagar',
                 city='Benipatti',
                 state='Bihar',
                 pincode='847213'
             )
         else:
-            admin_user.set_password(admin_password)
-            admin_user.role = 'admin'
-            admin_user.is_staff = True
-            admin_user.is_superuser = True
-            admin_user.mobile = admin_mobile
-            admin_user.save()
-        Cart.objects.get_or_create(user=admin_user)
-
-        demo_customer, cust_created = CustomUser.objects.get_or_create(
-            email='customer@gmail.com',
-            defaults={
-                'full_name': 'Ramesh Chandra Sharma',
-                'mobile': '9812345678',
-                'role': 'customer',
-                'address': 'House No. 45, Shanti Kunj, Ward 8',
-                'village_area': 'Shanti Nagar',
-                'city': 'Benipatti',
-                'state': 'Bihar',
-                'pincode': '847213'
-            }
-        )
-        if cust_created:
+            demo_customer.email = 'customer@example.com'
+            demo_customer.mobile = '9812345678'
+            demo_customer.full_name = 'Ramesh Chandra Sharma'
+            demo_customer.role = 'customer'
             demo_customer.set_password('Customer@123')
             demo_customer.save()
         Cart.objects.get_or_create(user=demo_customer)
-        self.stdout.write(self.style.SUCCESS(f'[OK] Predefined Admin ({admin_email} / {admin_mobile}) & Customer created'))
+        self.stdout.write(self.style.SUCCESS('[OK] Customer account verified'))
 
         # 3. Main General Store Categories (8 Categories Only)
         categories_data = [
@@ -662,7 +669,7 @@ class Command(BaseCommand):
             order1 = Order.objects.create(
                 user=demo_customer,
                 customer_name='Ramesh Chandra Sharma',
-                customer_email='customer@gmail.com',
+                customer_email='customer@example.com',
                 customer_phone='9812345678',
                 delivery_address='House No. 45, Shanti Kunj, Ward 8',
                 village_area='Shanti Nagar',
@@ -714,7 +721,7 @@ class Command(BaseCommand):
             order2 = Order.objects.create(
                 user=demo_customer,
                 customer_name='Ramesh Chandra Sharma',
-                customer_email='customer@gmail.com',
+                customer_email='customer@example.com',
                 customer_phone='9812345678',
                 delivery_address='House No. 45, Shanti Kunj, Ward 8',
                 village_area='Shanti Nagar',
@@ -725,7 +732,7 @@ class Command(BaseCommand):
                 delivery_charge=Decimal('30.00'),
                 total_amount=Decimal('455.00'),
                 payment_method='cod',
-                payment_status='unpaid',
+                payment_status='pending',
                 status='preparing',
                 notes='Leave at guard room if not home'
             )

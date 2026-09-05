@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+import dj_database_url
 import pymysql
 from dotenv import load_dotenv
 
@@ -9,15 +10,26 @@ pymysql.install_as_MySQLdb()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env file
+# Load .env file (if present locally)
 load_dotenv(BASE_DIR / '.env')
 
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-upendra-grocery-secret-key-2026-kirana-store-local-market-trusted')
+# Secret key: Read from environment, fallback to secure local dev key
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    os.environ.get('SECRET_KEY', 'django-insecure-upendra-grocery-secret-key-2026-kirana-store-local-market-trusted')
+)
 
+# Debug: Defaults to False in production unless explicitly set to True
+DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
-
-ALLOWED_HOSTS = ['*']
+# Allowed Hosts: Configurable via comma-separated ALLOWED_HOSTS environment variable
+allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '')
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]
+elif DEBUG:
+    ALLOWED_HOSTS = ['*']
+else:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.onrender.com']
 
 AUTH_USER_MODEL = 'store.CustomUser'
 
@@ -27,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'whitenoise.runserver_nostatic',
     'django.contrib.staticfiles',
     # Third party apps
     'rest_framework',
@@ -39,6 +52,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -67,10 +81,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'upendra_backend.wsgi.application'
 
-# Database Configuration with MySQL default and transparent SQLite fallback
-USE_MYSQL = os.environ.get('USE_MYSQL', 'False') == 'True'
+# Database Configuration
+# 1. Production: PostgreSQL via DATABASE_URL (e.g., Neon Free tier)
+# 2. Local optional: MySQL when USE_MYSQL=True
+# 3. Local default fallback: SQLite (upendra_store.sqlite3)
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+USE_MYSQL = os.environ.get('USE_MYSQL', 'False').lower() in ('true', '1', 'yes')
 
-if USE_MYSQL:
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    }
+elif USE_MYSQL:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.mysql',
@@ -105,9 +131,20 @@ TIME_ZONE = 'Asia/Kolkata'
 USE_I18N = True
 USE_TZ = True
 
+# Static files configuration (WhiteNoise for production on Render)
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+
+# Media / Uploaded files configuration
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -138,11 +175,25 @@ SIMPLE_JWT = {
 }
 
 # CORS Configuration
-CORS_ALLOW_ALL_ORIGINS = True
+cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if cors_origins_env:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_origins_env.split(',') if o.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+    ]
+
+# If CORS_ALLOW_ALL_ORIGINS is explicitly set in env or in local DEBUG mode
+CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1', 'yes') if not DEBUG else True
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:\d+$",
     r"^http://127.0.0.1:\d+$",
+    r"^https://.*\.vercel\.app$",
+    r"^https://.*\.onrender\.com$",
 ]
 
 # Payment Gateway Configuration (Razorpay / Sandbox)
@@ -151,17 +202,11 @@ PAYMENT_KEY_ID = os.environ.get('PAYMENT_KEY_ID', 'rzp_test_51b9eM8Lz5jM4h')
 PAYMENT_KEY_SECRET = os.environ.get('PAYMENT_KEY_SECRET', 'sandbox_secret_key_upendra_2026')
 PAYMENT_WEBHOOK_SECRET = os.environ.get('PAYMENT_WEBHOOK_SECRET', 'sandbox_webhook_secret_2026')
 
-# Administrator Account Configuration (Configurable via .env)
-ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'xyz@gmail.com').strip()
-ADMIN_MOBILE = os.environ.get('ADMIN_MOBILE', '7050830610').strip()
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Upendra1234')
+# Administrator Account Configuration (Configured securely via environment)
+ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', '').strip()
+ADMIN_MOBILE = os.environ.get('ADMIN_MOBILE', '').strip()
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
 
-# SMS / OTP Gateway Configuration
-OTP_TEST_MODE = os.environ.get('OTP_TEST_MODE', 'True').lower() in ('true', '1', 'yes')
-OTP_PROVIDER = os.environ.get('OTP_PROVIDER', 'fast2sms').strip().lower()
-FAST2SMS_API_KEY = os.environ.get('FAST2SMS_API_KEY', '').strip()
-TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '').strip()
-TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '').strip()
-TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '').strip()
+
 
 

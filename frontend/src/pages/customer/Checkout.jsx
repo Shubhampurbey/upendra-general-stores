@@ -33,7 +33,7 @@ import { getProductImageUrl } from '../../utils/imageUrl';
 import { loadRazorpayScript } from '../../utils/loadRazorpay';
 import toast from 'react-hot-toast';
 
-const SHOP_UPI_ID = '7050830610@ptsbi';
+const SHOP_UPI_ID = import.meta.env.VITE_SHOP_UPI_ID || '7050830610@ptsbi';
 const SHOP_NAME = 'Upendra General Stores';
 
 const Checkout = () => {

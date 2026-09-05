@@ -11,21 +11,6 @@ export const AuthService = {
     return response.data;
   },
 
-  verifyOTP: async (sessionToken, otpCode) => {
-    const response = await apiClient.post('/auth/verify-otp/', {
-      session_token: sessionToken,
-      otp_code: otpCode,
-    });
-    return response.data;
-  },
-
-  resendOTP: async (sessionToken) => {
-    const response = await apiClient.post('/auth/resend-otp/', {
-      session_token: sessionToken,
-    });
-    return response.data;
-  },
-
   login: async (email, password) => {
     const response = await apiClient.post('/auth/login/', { email, password });
     return response.data;

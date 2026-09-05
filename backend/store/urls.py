@@ -5,8 +5,6 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     LoginInitView,
     RegisterInitView,
-    VerifyOTPView,
-    ResendOTPView,
     CustomTokenObtainPairView,
     AdminTokenObtainPairView,
     RegisterView,
@@ -37,13 +35,9 @@ router.register(r'products', ProductViewSet, basename='product')
 router.register(r'orders', OrderViewSet, basename='order')
 
 urlpatterns = [
-    # Secure OTP Auth endpoints
+    # Direct Auth endpoints
     path('auth/login-init/', LoginInitView.as_view(), name='auth_login_init'),
     path('auth/register-init/', RegisterInitView.as_view(), name='auth_register_init'),
-    path('auth/verify-otp/', VerifyOTPView.as_view(), name='auth_verify_otp'),
-    path('auth/resend-otp/', ResendOTPView.as_view(), name='auth_resend_otp'),
-
-    # Direct endpoints (deprecated/secured)
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/admin-login/', AdminTokenObtainPairView.as_view(), name='admin_token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

@@ -83,41 +83,6 @@ export const AuthProvider = ({ children }) => {
 
   const registerInit = register;
 
-  const verifyOTP = async (sessionToken, otpCode) => {
-    try {
-      const res = await AuthService.verifyOTP(sessionToken, otpCode);
-      const { tokens, user: userData, message } = res;
-
-      localStorage.setItem('upendra_access_token', tokens.access);
-      localStorage.setItem('upendra_refresh_token', tokens.refresh);
-      localStorage.setItem('upendra_user', JSON.stringify(userData));
-      setUser(userData);
-
-      if (userData.role === 'admin' || userData.is_admin) {
-        toast.success(`Welcome to Admin Suite, ${userData.full_name}!`);
-      } else {
-        toast.success(message || `Namaste, ${userData.full_name}! Welcome.`);
-      }
-      return userData;
-    } catch (err) {
-      const msg = err.response?.data?.detail || 'Invalid or expired OTP. Please try again.';
-      toast.error(msg);
-      throw err;
-    }
-  };
-
-  const resendOTP = async (sessionToken) => {
-    try {
-      const res = await AuthService.resendOTP(sessionToken);
-      toast.success(res.message || 'New OTP sent to your mobile number.');
-      return res;
-    } catch (err) {
-      const msg = err.response?.data?.detail || 'Failed to resend OTP. Please try again in a moment.';
-      toast.error(msg);
-      throw err;
-    }
-  };
-
   const logout = () => {
     localStorage.removeItem('upendra_access_token');
     localStorage.removeItem('upendra_refresh_token');
@@ -151,8 +116,6 @@ export const AuthProvider = ({ children }) => {
         loginInit,
         register,
         registerInit,
-        verifyOTP,
-        resendOTP,
         logout,
         updateUserProfile,
       }}
