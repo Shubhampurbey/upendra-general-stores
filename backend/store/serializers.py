@@ -62,9 +62,29 @@ class UserRegisterSerializer(serializers.ModelSerializer):
             'pincode': {'required': False, 'allow_blank': True},
         }
 
+    def validate_email(self, value):
+        from .views import is_valid_email
+        email_clean = value.strip().lower()
+        if not is_valid_email(email_clean):
+            raise serializers.ValidationError("Please enter a valid email address (e.g. name@example.com).")
+        if CustomUser.objects.filter(email__iexact=email_clean).exists():
+            raise serializers.ValidationError("An account with this email address already exists. Please sign in instead.")
+        return email_clean
+
+    def validate_mobile(self, value):
+        from .views import clean_indian_phone
+        clean_mobile = clean_indian_phone(value)
+        if not clean_mobile:
+            raise serializers.ValidationError("Please enter a valid 10-digit Indian mobile number.")
+        if CustomUser.objects.filter(mobile=clean_mobile).exists():
+            raise serializers.ValidationError("An account with this mobile number already exists.")
+        return clean_mobile
+
     def validate(self, attrs):
         if attrs.get('password') != attrs.get('confirm_password'):
             raise serializers.ValidationError({"password": "Passwords do not match."})
+        if len(attrs.get('password', '')) < 6:
+            raise serializers.ValidationError({"password": "Password must be at least 6 characters long."})
         return attrs
 
     def create(self, validated_data):
@@ -82,6 +102,7 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         )
         Cart.objects.get_or_create(user=user)
         return user
+
 
 
 class UserProfileSerializer(serializers.ModelSerializer):

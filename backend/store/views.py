@@ -35,7 +35,47 @@ from .payment_gateway import (
 import json
 import logging
 
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+
 logger = logging.getLogger(__name__)
+
+EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$')
+
+
+def is_valid_email(email_str):
+    """
+    Validates that the email address is well-formed with a valid domain and TLD extension.
+    Rejects malformed strings like 'abc', 'abc@', 'abc@gmail', 'user@domain', etc.
+    """
+    if not email_str or not isinstance(email_str, str):
+        return False
+    email_clean = email_str.strip()
+    if not EMAIL_REGEX.match(email_clean):
+        return False
+    try:
+        validate_email(email_clean)
+        return True
+    except ValidationError:
+        return False
+
+
+def clean_indian_phone(phone_str):
+    """
+    Cleans and validates an Indian mobile number.
+    Strips whitespace, dashes, brackets, and '+91' or leading '0'.
+    Returns a 10-digit number starting with 6, 7, 8, or 9 if valid, or empty string if invalid.
+    """
+    if not phone_str:
+        return ''
+    digits = re.sub(r'\D', '', str(phone_str))
+    if len(digits) == 12 and digits.startswith('91'):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith('0'):
+        digits = digits[1:]
+    if len(digits) == 10 and digits[0] in '6789':
+        return digits
+    return ''
 
 
 def get_admin_mobile():
@@ -160,58 +200,58 @@ class RegisterInitView(views.APIView):
         pincode = request.data.get('pincode', '').strip()
 
         errors = {}
+
+        # 1. Validate Full Name
         if not full_name:
-            errors['full_name'] = ['Full name is required.']
+            errors['full_name'] = 'Full name is required.'
+        elif len(full_name) < 2:
+            errors['full_name'] = 'Full name must be at least 2 characters long.'
+
+        # 2. Validate Email Address
+        email_clean = email.lower()
         if not email:
-            errors['email'] = ['Email address is required.']
+            errors['email'] = 'Email address is required.'
+        elif not is_valid_email(email_clean):
+            errors['email'] = 'Please enter a valid email address (e.g. name@example.com).'
+        elif CustomUser.objects.filter(email__iexact=email_clean).exists():
+            errors['email'] = 'An account with this email address already exists. Please sign in instead.'
+        else:
+            admin_email = get_admin_email()
+            if admin_email and email_clean == admin_email.lower():
+                errors['email'] = 'This email address is reserved for store administration and cannot be registered as a customer.'
+
+        # 3. Validate Mobile Number (Indian Phone)
         if not mobile:
-            errors['mobile'] = ['Mobile number is required.']
+            errors['mobile'] = 'Mobile number is required.'
+        else:
+            clean_mobile = clean_indian_phone(mobile)
+            if not clean_mobile:
+                errors['mobile'] = 'Please enter a valid 10-digit Indian mobile number.'
+            elif CustomUser.objects.filter(mobile=clean_mobile).exists():
+                errors['mobile'] = 'An account with this mobile number already exists.'
+
+        # 4. Validate Password
         if not password:
-            errors['password'] = ['Password is required.']
+            errors['password'] = 'Password is required.'
+        elif len(password) < 6:
+            errors['password'] = 'Password must be at least 6 characters long.'
+        elif confirm_password and password != confirm_password:
+            errors['confirm_password'] = 'Passwords do not match. Please verify your password.'
+            if 'password' not in errors:
+                errors['password'] = 'Passwords do not match.'
 
         if errors:
-            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
-
-        email_clean = email.lower()
-        admin_email = get_admin_email()
-
-        # Disallow registering with predefined admin email if configured
-        if admin_email and email_clean == admin_email:
-            return Response(
-                {'email': ['This email address is reserved for store administration and cannot be registered as a customer.']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if password != confirm_password:
-            return Response(
-                {'password': ['Passwords do not match. Please verify your password.']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if len(password) < 6:
-            return Response(
-                {'password': ['Password must be at least 6 characters long.']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if CustomUser.objects.filter(email__iexact=email_clean).exists():
-            return Response(
-                {'email': ['An account with this email address already exists. Please sign in instead.']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        clean_mobile = clean_indian_phone(mobile)
-        if len(clean_mobile) < 10:
-            return Response(
-                {'mobile': ['Please enter a valid 10-digit mobile number.']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if CustomUser.objects.filter(mobile=clean_mobile).exists():
-            return Response(
-                {'mobile': ['An account with this mobile number already exists.']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            first_error_msg = next(iter(errors.values()))
+            response_data = {
+                'success': False,
+                'message': first_error_msg,
+                'errors': errors,
+                'detail': first_error_msg,
+            }
+            # Add field-level list mappings for backward compatibility
+            for k, v in errors.items():
+                response_data[k] = [v] if isinstance(v, str) else v
+            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
 
         # Create customer user directly
         user = CustomUser(
@@ -233,6 +273,7 @@ class RegisterInitView(views.APIView):
 
         refresh = RefreshToken.for_user(user)
         return Response({
+            'success': True,
             'message': 'Account created successfully! Welcome to Upendra General Stores.',
             'tokens': {
                 'access': str(refresh.access_token),
@@ -253,6 +294,7 @@ class RegisterInitView(views.APIView):
                 'profile_image': None,
             }
         }, status=status.HTTP_201_CREATED)
+
 
 
 class CustomTokenObtainPairView(views.APIView):

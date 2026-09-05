@@ -69,10 +69,17 @@ export const AuthProvider = ({ children }) => {
       let msg = 'Registration failed. Please check your inputs.';
       if (errData) {
         if (typeof errData === 'object') {
-          msg = Object.entries(errData)
-            .map(([key, val]) => `${key}: ${Array.isArray(val) ? val.join(' ') : val}`)
-            .join(' | ');
-        } else if (typeof errData === 'string') {
+          if (errData.message && typeof errData.message === 'string') {
+            msg = errData.message;
+          } else if (errData.detail && typeof errData.detail === 'string') {
+            msg = errData.detail;
+          } else {
+            msg = Object.entries(errData)
+              .filter(([k]) => k !== 'errors' && k !== 'success')
+              .map(([key, val]) => `${key}: ${Array.isArray(val) ? val.join(' ') : val}`)
+              .join(' | ');
+          }
+        } else if (typeof errData === 'string' && !errData.includes('<!DOCTYPE')) {
           msg = errData;
         }
       }
@@ -80,6 +87,7 @@ export const AuthProvider = ({ children }) => {
       throw err;
     }
   };
+
 
   const registerInit = register;
 
