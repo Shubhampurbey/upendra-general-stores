@@ -83,32 +83,88 @@ WSGI_APPLICATION = 'upendra_backend.wsgi.application'
 
 # Database Configuration
 # 1. Production: PostgreSQL via DATABASE_URL (e.g., Neon Free tier)
-# 2. Local optional: MySQL when USE_MYSQL=True
-# 3. Local default fallback: SQLite (upendra_store.sqlite3)
-DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+# 2. Production/Custom: PostgreSQL via individual DB_* environment variables
+# 3. Local optional: MySQL when USE_MYSQL=True
+# 4. Local default fallback: SQLite (upendra_store.sqlite3)
+def _clean_env_val(val):
+    if not val:
+        return ''
+    s = str(val).strip().strip("'\"`")
+    if s.startswith('psql '):
+        s = s[5:].strip().strip("'\"`")
+    return s
+
+DATABASE_URL = _clean_env_val(os.environ.get('DATABASE_URL', ''))
 USE_MYSQL = os.environ.get('USE_MYSQL', 'False').lower() in ('true', '1', 'yes')
+USE_POSTGRES = os.environ.get('USE_POSTGRES', 'False').lower() in ('true', '1', 'yes')
+DB_ENGINE = _clean_env_val(os.environ.get('DB_ENGINE', '')).lower()
+DB_NAME = _clean_env_val(os.environ.get('DB_NAME', ''))
+DB_USER = _clean_env_val(os.environ.get('DB_USER', ''))
+DB_PASSWORD = _clean_env_val(os.environ.get('DB_PASSWORD', ''))
+DB_HOST = _clean_env_val(os.environ.get('DB_HOST', ''))
+DB_PORT = _clean_env_val(os.environ.get('DB_PORT', ''))
+
+# If DB_HOST or DB_NAME was accidentally provided as the full postgres connection URL
+if not DATABASE_URL:
+    if DB_HOST.startswith(('postgres://', 'postgresql://')):
+        DATABASE_URL = DB_HOST
+        DB_HOST = ''
+    elif DB_NAME.startswith(('postgres://', 'postgresql://')):
+        DATABASE_URL = DB_NAME
+        DB_NAME = ''
 
 if DATABASE_URL:
     DATABASES = {
-        'default': dj_database_url.config(
-            default=DATABASE_URL,
+        'default': dj_database_url.parse(
+            DATABASE_URL,
             conn_max_age=600,
             conn_health_checks=True,
+            ssl_require=True if 'neon.tech' in DATABASE_URL or 'sslmode=require' in DATABASE_URL else False,
         )
     }
 elif USE_MYSQL:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.mysql',
-            'NAME': os.environ.get('DB_NAME', 'upendra_store_db'),
-            'USER': os.environ.get('DB_USER', 'root'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', 'root'),
-            'HOST': os.environ.get('DB_HOST', 'localhost'),
-            'PORT': os.environ.get('DB_PORT', '3306'),
+            'NAME': DB_NAME or 'upendra_store_db',
+            'USER': DB_USER or 'root',
+            'PASSWORD': DB_PASSWORD or 'root',
+            'HOST': DB_HOST or 'localhost',
+            'PORT': DB_PORT or '3306',
             'OPTIONS': {
                 'charset': 'utf8mb4',
                 'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             }
+        }
+    }
+elif (DB_HOST and DB_PORT != '3306') or USE_POSTGRES or DB_ENGINE == 'postgresql':
+    # Clean host in case of protocol, path or port
+    clean_host = DB_HOST
+    for prefix in ('https://', 'http://', 'postgresql://', 'postgres://'):
+        if clean_host.startswith(prefix):
+            clean_host = clean_host[len(prefix):]
+    if '/' in clean_host:
+        clean_host = clean_host.split('/')[0]
+    if '?' in clean_host:
+        clean_host = clean_host.split('?')[0]
+    if ':' in clean_host:
+        host_part, port_part = clean_host.split(':', 1)
+        clean_host = host_part
+        if not DB_PORT:
+            DB_PORT = port_part
+
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': DB_NAME or 'neondb',
+            'USER': DB_USER or 'postgres',
+            'PASSWORD': DB_PASSWORD or '',
+            'HOST': clean_host,
+            'PORT': DB_PORT or '5432',
+            'CONN_MAX_AGE': 600,
+            'OPTIONS': {
+                'sslmode': 'require'
+            } if 'neon.tech' in clean_host else {}
         }
     }
 else:
@@ -118,6 +174,8 @@ else:
             'NAME': BASE_DIR / 'upendra_store.sqlite3',
         }
     }
+
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -195,6 +253,21 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
     r"^https://.*\.onrender\.com$",
 ]
+
+# CSRF Trusted Origins
+csrf_trusted_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+if csrf_trusted_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_trusted_env.split(',') if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'https://*.onrender.com',
+        'https://*.vercel.app',
+    ]
+
 
 # Payment Gateway Configuration (Razorpay / Sandbox)
 PAYMENT_GATEWAY = os.environ.get('PAYMENT_GATEWAY', 'razorpay')
