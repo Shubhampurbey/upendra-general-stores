@@ -1,17 +1,26 @@
 import os
 from pathlib import Path
 from datetime import timedelta
-import dj_database_url
-import pymysql
-from dotenv import load_dotenv
 
-# PyMySQL install as MySQLdb
-pymysql.install_as_MySQLdb()
+try:
+    import dj_database_url
+except ImportError:
+    dj_database_url = None
+
+try:
+    import pymysql
+    pymysql.install_as_MySQLdb()
+except ImportError:
+    pass
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env file (if present locally)
-load_dotenv(BASE_DIR / '.env')
+# Load .env file (if python-dotenv is present locally)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / '.env')
+except ImportError:
+    pass
 
 # Secret key: Read from environment, fallback to secure local dev key
 SECRET_KEY = os.environ.get(
@@ -39,7 +48,6 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    'whitenoise.runserver_nostatic',
     'django.contrib.staticfiles',
     # Third party apps
     'rest_framework',
@@ -48,6 +56,14 @@ INSTALLED_APPS = [
     # Local apps
     'store',
 ]
+
+# Add whitenoise runserver if installed
+try:
+    import whitenoise
+    INSTALLED_APPS.insert(5, 'whitenoise.runserver_nostatic')
+except ImportError:
+    pass
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -113,7 +129,7 @@ if not DATABASE_URL:
         DATABASE_URL = DB_NAME
         DB_NAME = ''
 
-if DATABASE_URL:
+if DATABASE_URL and dj_database_url:
     DATABASES = {
         'default': dj_database_url.parse(
             DATABASE_URL,
@@ -122,6 +138,7 @@ if DATABASE_URL:
             ssl_require=True if 'neon.tech' in DATABASE_URL or 'sslmode=require' in DATABASE_URL else False,
         )
     }
+
 elif USE_MYSQL:
     DATABASES = {
         'default': {
