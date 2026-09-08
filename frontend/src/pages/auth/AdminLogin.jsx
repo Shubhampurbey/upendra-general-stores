@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ShieldCheck, Lock, User, ArrowRight, KeyRound, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Lock, User, ArrowRight, KeyRound, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const AdminLogin = () => {
-  const { login } = useAuth();
+  const { adminLogin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -19,11 +19,11 @@ const AdminLogin = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
-    if (!email || !password) return;
+    if (!identifier || !password) return;
 
     try {
       setLoading(true);
-      const loggedUser = await login(email.trim(), password, 'admin');
+      const loggedUser = await adminLogin(identifier.trim(), password);
       if (loggedUser.role === 'admin' || loggedUser.is_admin) {
         navigate(from, { replace: true });
       } else {
@@ -32,7 +32,7 @@ const AdminLogin = () => {
       }
     } catch (err) {
       console.error('Admin login error:', err);
-      const msg = err.response?.data?.detail || 'Invalid admin credentials.';
+      const msg = err.response?.data?.detail || err.response?.data?.message || 'Invalid administrator credentials.';
       setErrorMessage(msg);
     } finally {
       setLoading(false);
@@ -78,17 +78,17 @@ const AdminLogin = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-kirana-brown-dark uppercase tracking-wider mb-1.5">
-              Admin Email Address
+              Admin Email / Mobile
             </label>
             <div className="relative">
               <User className="w-4 h-4 absolute left-3.5 top-3.5 text-kirana-brown-muted" />
               <input
-                type="email"
+                type="text"
                 required
-                placeholder="xyz@gmail.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-kirana-sand/40 focus:bg-white border border-kirana-beige focus:border-kirana-orange rounded-2xl py-2.5 pl-10 pr-4 text-xs text-kirana-brown-dark outline-none transition-all"
+                placeholder="upendrageneralstore@gmail.com or 7050830610"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className="w-full bg-kirana-sand/40 focus:bg-white border border-kirana-beige focus:border-kirana-orange rounded-2xl py-2.5 pl-10 pr-4 text-xs text-kirana-brown-dark outline-none transition-all font-medium"
               />
             </div>
           </div>
@@ -113,10 +113,13 @@ const AdminLogin = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-kirana-brown-dark to-black hover:from-black hover:to-kirana-brown-dark text-white text-xs sm:text-sm font-black tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all btn-press disabled:opacity-50"
+            className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-kirana-brown-dark to-black hover:from-black hover:to-kirana-brown-dark text-white text-xs sm:text-sm font-black tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all btn-press disabled:opacity-50 cursor-pointer"
           >
             {loading ? (
-              <span>Authenticating Administrator...</span>
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Authenticating Administrator...</span>
+              </>
             ) : (
               <>
                 <ShieldCheck className="w-4 h-4 text-kirana-orange" />

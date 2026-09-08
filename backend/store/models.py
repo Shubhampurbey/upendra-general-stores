@@ -7,11 +7,12 @@ from django.utils import timezone
 
 
 class CustomUserManager(BaseUserManager):
-    def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError('Email address is mandatory')
-        email = self.normalize_email(email)
-        user = self.model(email=email, **extra_fields)
+    def create_user(self, mobile, email=None, password=None, **extra_fields):
+        if not mobile:
+            raise ValueError('Mobile number is mandatory')
+        
+        email_clean = self.normalize_email(email) if email else None
+        user = self.model(mobile=mobile, email=email_clean, **extra_fields)
         if password:
             user.set_password(password)
         else:
@@ -19,11 +20,13 @@ class CustomUserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, email, password=None, **extra_fields):
+    def create_superuser(self, mobile=None, email=None, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('role', 'admin')
-        return self.create_user(email, password, **extra_fields)
+        if not mobile:
+            mobile = extra_fields.pop('mobile', None) or '7050830610'
+        return self.create_user(mobile=mobile, email=email, password=password, **extra_fields)
 
 
 class CustomUser(AbstractUser):
@@ -33,14 +36,14 @@ class CustomUser(AbstractUser):
     )
 
     username = None
-    email = models.EmailField('Email Address', unique=True)
+    mobile = models.CharField('Mobile Number', max_length=15, unique=True, null=True, blank=True, db_index=True)
+    email = models.EmailField('Email Address', unique=True, null=True, blank=True, default=None)
     full_name = models.CharField('Full Name', max_length=150)
-    mobile = models.CharField('Mobile Number', max_length=15, unique=True, null=True, blank=True)
     role = models.CharField('Role', max_length=20, choices=ROLE_CHOICES, default='customer')
     address = models.TextField('Address Line', blank=True)
     village_area = models.CharField('Village / Area', max_length=150, blank=True)
     city = models.CharField('City / Town', max_length=100, blank=True)
-    state = models.CharField('State', max_length=100, default='State')
+    state = models.CharField('State', max_length=100, default='Bihar')
     pincode = models.CharField('PIN Code', max_length=10, blank=True)
     profile_image = models.ImageField(upload_to='profiles/', blank=True, null=True, max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -48,11 +51,12 @@ class CustomUser(AbstractUser):
 
     objects = CustomUserManager()
 
-    USERNAME_FIELD = 'email'
+    USERNAME_FIELD = 'mobile'
     REQUIRED_FIELDS = ['full_name']
 
     def __str__(self):
-        return f"{self.full_name} ({self.email}) - {self.role}"
+        identifier = self.mobile or self.email or self.full_name
+        return f"{self.full_name} ({identifier}) - {self.role}"
 
     @property
     def is_admin_user(self):
@@ -140,7 +144,7 @@ class Cart(models.Model):
         return sum((item.subtotal for item in self.items.all()), Decimal('0.00'))
 
     def __str__(self):
-        return f"Cart of {self.user.email}"
+        return f"Cart of {self.user.mobile or self.user.full_name}"
 
 
 class CartItem(models.Model):
@@ -205,12 +209,12 @@ class Order(models.Model):
     order_id = models.CharField(max_length=32, unique=True, editable=False)
     user = models.ForeignKey(CustomUser, related_name='orders', on_delete=models.SET_NULL, null=True, blank=True)
     customer_name = models.CharField(max_length=150)
-    customer_email = models.EmailField(blank=True)
+    customer_email = models.EmailField(blank=True, null=True)
     customer_phone = models.CharField(max_length=20)
     delivery_address = models.TextField(blank=True)
     village_area = models.CharField(max_length=150, blank=True)
     city = models.CharField(max_length=100, default='Local Area', blank=True)
-    state = models.CharField(max_length=100, default='State', blank=True)
+    state = models.CharField(max_length=100, default='Bihar', blank=True)
     pincode = models.CharField(max_length=10, blank=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
@@ -228,7 +232,6 @@ class Order(models.Model):
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
 
     class Meta:
         ordering = ['-created_at']
@@ -289,9 +292,9 @@ class OTPVerification(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     session_token = models.CharField(max_length=64, unique=True, db_index=True)
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True, blank=True, related_name='otp_verifications')
-    email = models.EmailField(db_index=True)
-    mobile = models.CharField(max_length=20)
-    otp_code = models.CharField(max_length=10)
+    email = models.EmailField(db_index=True, blank=True, null=True)
+    mobile = models.CharField(max_length=20, db_index=True)
+    otp_code = models.CharField(max_length=128)
     purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES, default='login')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='customer')
     payload = models.JSONField(default=dict, blank=True)
@@ -309,5 +312,4 @@ class OTPVerification(models.Model):
         return timezone.now() > self.expires_at
 
     def __str__(self):
-        return f"OTP ({self.purpose}) for {self.email} / {self.mobile} - Verified: {self.is_verified}"
-
+        return f"OTP ({self.purpose}) for {self.mobile} - Verified: {self.is_verified}"

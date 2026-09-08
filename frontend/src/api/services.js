@@ -1,31 +1,43 @@
 import apiClient from './client';
 
 export const AuthService = {
-  loginInit: async (email, password, role = 'customer') => {
-    const response = await apiClient.post('/auth/login-init/', { email, password, role });
+  // Customer Mobile + Real SMS OTP Authentication
+  sendOtp: async (mobile, fullName = '') => {
+    const response = await apiClient.post('/auth/send-otp/', {
+      mobile,
+      full_name: fullName,
+    });
     return response.data;
   },
 
-  registerInit: async (userData) => {
-    const response = await apiClient.post('/auth/register-init/', userData);
+  verifyOtp: async (sessionToken, mobile, otp, fullName = '') => {
+    const response = await apiClient.post('/auth/verify-otp/', {
+      session_token: sessionToken,
+      mobile,
+      otp,
+      full_name: fullName,
+    });
     return response.data;
   },
 
-  login: async (email, password) => {
-    const response = await apiClient.post('/auth/login/', { email, password });
+  resendOtp: async (sessionToken, mobile) => {
+    const response = await apiClient.post('/auth/resend-otp/', {
+      session_token: sessionToken,
+      mobile,
+    });
     return response.data;
   },
 
-  adminLogin: async (email, password) => {
-    const response = await apiClient.post('/auth/admin-login/', { email, password });
+  // Dedicated Admin Login
+  adminLogin: async (emailOrMobile, password) => {
+    const response = await apiClient.post('/auth/admin-login/', {
+      email: emailOrMobile,
+      password,
+    });
     return response.data;
   },
 
-  register: async (userData) => {
-    const response = await apiClient.post('/auth/register/', userData);
-    return response.data;
-  },
-
+  // Customer Profile Management
   getProfile: async () => {
     const response = await apiClient.get('/auth/profile/');
     return response.data;
@@ -93,7 +105,6 @@ export const CartService = {
   },
 
   addItem: async (itemData) => {
-    // { product_id, quantity, unit }
     const response = await apiClient.post('/cart/add/', itemData);
     return response.data;
   },
@@ -158,9 +169,7 @@ export const AdminService = {
   },
 
   uploadImage: async (formData) => {
-    const response = await apiClient.post('/admin/upload-image/', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await apiClient.post('/admin/upload-image/', formData);
     return response.data;
   },
 };
@@ -199,4 +208,3 @@ export const StoreService = {
     return response.data;
   },
 };
-

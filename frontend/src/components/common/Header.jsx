@@ -295,7 +295,7 @@ const Header = () => {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-bold text-kirana-brown-dark truncate">{user.full_name}</p>
-                          <p className="text-[11px] text-kirana-brown-muted truncate">{user.email}</p>
+                          <p className="text-[11px] font-mono text-kirana-brown-muted truncate">{user?.mobile ? `+91 ${user.mobile}` : (user?.email || '')}</p>
                           <span className={`inline-block mt-0.5 text-[9px] font-bold px-2 py-0.2 rounded-full ${isAdmin ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
                             {isAdmin ? '★ Store Admin' : 'Customer'}
                           </span>

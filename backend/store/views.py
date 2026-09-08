@@ -1,22 +1,19 @@
 import os
 import secrets
 import re
+from datetime import timedelta
 from decimal import Decimal
-from django.db.models import Sum, Count, Q, Avg
+from django.db.models import Sum, Count, Q
 from django.utils import timezone
 from django.conf import settings
 from django.contrib.auth.hashers import make_password, check_password
-from rest_framework import status, views, viewsets, permissions, filters
+from rest_framework import status, views, viewsets, permissions
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import CustomUser, Category, Product, Cart, CartItem, Order, OrderItem, StoreSetting
+from .models import CustomUser, Category, Product, Cart, CartItem, Order, OrderItem, StoreSetting, OTPVerification
 from .serializers import (
-    CustomTokenObtainPairSerializer,
-    AdminTokenObtainPairSerializer,
-    UserRegisterSerializer,
     UserProfileSerializer,
     CategorySerializer,
     ProductSerializer,
@@ -25,7 +22,8 @@ from .serializers import (
     OrderSerializer,
     StoreSettingSerializer,
 )
-from .permissions import IsAdminUserOrReadOnly, IsAdminRole, IsOwnerOrAdmin, get_admin_email
+from .permissions import IsAdminUserOrReadOnly, IsAdminRole, IsOwnerOrAdmin, check_is_admin, get_admin_email, get_admin_mobile
+from .sms_service import SMSService, clean_indian_mobile
 from .payment_gateway import (
     create_gateway_order,
     verify_payment_signature,
@@ -35,306 +33,354 @@ from .payment_gateway import (
 import json
 import logging
 
-from django.core.validators import validate_email
-from django.core.exceptions import ValidationError
-
 logger = logging.getLogger(__name__)
 
-EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$')
 
+# =====================================================================
+# Customer Phone + Real OTP Authentication Views
+# =====================================================================
 
-def is_valid_email(email_str):
+class SendOTPView(views.APIView):
     """
-    Validates that the email address is well-formed with a valid domain and TLD extension.
-    Rejects malformed strings like 'abc', 'abc@', 'abc@gmail', 'user@domain', etc.
-    """
-    if not email_str or not isinstance(email_str, str):
-        return False
-    email_clean = email_str.strip()
-    if not EMAIL_REGEX.match(email_clean):
-        return False
-    try:
-        validate_email(email_clean)
-        return True
-    except ValidationError:
-        return False
-
-
-def clean_indian_phone(phone_str):
-    """
-    Cleans and validates an Indian mobile number.
-    Strips whitespace, dashes, brackets, and '+91' or leading '0'.
-    Returns a 10-digit number starting with 6, 7, 8, or 9 if valid, or empty string if invalid.
-    """
-    if not phone_str:
-        return ''
-    digits = re.sub(r'\D', '', str(phone_str))
-    if len(digits) == 12 and digits.startswith('91'):
-        digits = digits[2:]
-    elif len(digits) == 11 and digits.startswith('0'):
-        digits = digits[1:]
-    if len(digits) == 10 and digits[0] in '6789':
-        return digits
-    return ''
-
-
-def get_admin_mobile():
-    return getattr(settings, 'ADMIN_MOBILE', '7050830610').strip()
-
-
-
-class LoginInitView(views.APIView):
-    """
-    Direct Authentication Endpoint for Customer and Admin (No OTP required).
-    - Admin: authenticates with configured administrator credentials and role verification.
-    - Customer: authenticates with registered customer email + password.
-    Returns JWT access and refresh tokens directly.
+    Step 1: Customer enters a 10-digit Indian mobile number.
+    Generates a cryptographically random 6-digit OTP, securely hashes it,
+    dispatches a REAL SMS to the customer's phone via configured SMS provider,
+    and returns a unique session_token.
     """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        email = request.data.get('email', '').strip()
-        password = request.data.get('password', '')
-        role = request.data.get('role', 'customer').strip().lower()
+        raw_mobile = request.data.get('mobile', '')
+        full_name = request.data.get('full_name', '').strip()
 
-        if not email or not password:
-            return Response(
-                {'detail': 'Email and password are required.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if role not in ['customer', 'admin']:
-            role = 'customer'
-
-        email_clean = email.lower()
-        admin_email = get_admin_email()
-
-        # Admin login
-        if role == 'admin':
-            # Verify configured admin email if set
-            if admin_email and email_clean != admin_email:
-                return Response(
-                    {'detail': 'Invalid admin credentials.'},
-                    status=status.HTTP_401_UNAUTHORIZED
-                )
-
-            user = CustomUser.objects.filter(email__iexact=email_clean).first()
-            if not user or not user.check_password(password) or not user.is_admin_user or user.role != 'admin':
-                return Response(
-                    {'detail': 'Invalid admin credentials.'},
-                    status=status.HTTP_401_UNAUTHORIZED
-                )
-
-            refresh = RefreshToken.for_user(user)
+        clean_mobile = clean_indian_mobile(raw_mobile)
+        if not clean_mobile:
             return Response({
-                'message': f'Welcome to Upendra General Stores Admin Suite, {user.full_name}!',
-                'tokens': {
-                    'access': str(refresh.access_token),
-                    'refresh': str(refresh),
-                },
-                'user': {
-                    'id': user.id,
-                    'email': user.email,
-                    'full_name': user.full_name,
-                    'mobile': user.mobile,
-                    'role': 'admin',
-                    'is_admin': True,
-                    'address': user.address,
-                    'village_area': user.village_area,
-                    'city': user.city,
-                    'state': user.state,
-                    'pincode': user.pincode,
-                    'profile_image': user.profile_image.url if user.profile_image else None,
-                }
-            }, status=status.HTTP_200_OK)
+                'success': False,
+                'message': 'Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Customer login
-        user = CustomUser.objects.filter(email__iexact=email_clean).first()
-        if not user or not user.check_password(password):
-            return Response(
-                {'detail': 'Invalid email address or password. Please try again.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # 1. Check Rate Limiting & 60s Resend Cooldown
+        one_minute_ago = timezone.now() - timedelta(seconds=60)
+        recent_otp = OTPVerification.objects.filter(
+            mobile=clean_mobile,
+            created_at__gte=one_minute_ago,
+            is_verified=False
+        ).first()
 
-        refresh = RefreshToken.for_user(user)
+        if recent_otp:
+            time_left = int(60 - (timezone.now() - recent_otp.created_at).total_seconds())
+            return Response({
+                'success': False,
+                'message': f'Please wait {max(1, time_left)} seconds before requesting a new OTP.',
+                'cooldown_seconds': max(1, time_left)
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        # 2. Prevent Abuse (Max 5 requests per hour)
+        one_hour_ago = timezone.now() - timedelta(hours=1)
+        hourly_count = OTPVerification.objects.filter(
+            mobile=clean_mobile,
+            created_at__gte=one_hour_ago
+        ).count()
+
+        if hourly_count >= 6:
+            return Response({
+                'success': False,
+                'message': 'Too many OTP requests for this number. Please try again after 1 hour.'
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        # 3. Generate 6-Digit Cryptographic OTP
+        otp_code = str(secrets.randbelow(900000) + 100000)
+        session_token = secrets.token_hex(32)
+        otp_hash = make_password(otp_code)
+
+        # 4. Dispatch Real SMS via SMS Provider
+        sms_sent, sms_msg = SMSService.send_otp_sms(clean_mobile, otp_code)
+        if not sms_sent:
+            return Response({
+                'success': False,
+                'message': sms_msg or 'Failed to send OTP SMS. Please check mobile number or try again later.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 5. Invalidate older unverified OTP records for this mobile
+        OTPVerification.objects.filter(mobile=clean_mobile, is_verified=False).delete()
+
+        # 6. Save new OTP verification record (5 min expiry)
+        OTPVerification.objects.create(
+            session_token=session_token,
+            mobile=clean_mobile,
+            otp_code=otp_hash,
+            purpose='login',
+            role='customer',
+            payload={'full_name': full_name} if full_name else {},
+            expires_at=timezone.now() + timedelta(minutes=5)
+        )
+
+        is_existing_customer = CustomUser.objects.filter(mobile=clean_mobile).exists()
+
         return Response({
-            'message': f'Namaste, {user.full_name}! Login successful.',
-            'tokens': {
-                'access': str(refresh.access_token),
-                'refresh': str(refresh),
-            },
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'full_name': user.full_name,
-                'mobile': user.mobile,
-                'role': user.role,
-                'is_admin': user.is_admin_user,
-                'address': user.address,
-                'village_area': user.village_area,
-                'city': user.city,
-                'state': user.state,
-                'pincode': user.pincode,
-                'profile_image': user.profile_image.url if user.profile_image else None,
-            }
+            'success': True,
+            'message': f'OTP has been sent via SMS to +91 {clean_mobile[:5]} {clean_mobile[5:]}.',
+            'session_token': session_token,
+            'is_new_user': not is_existing_customer,
+            'expires_in': 300
         }, status=status.HTTP_200_OK)
 
 
-class RegisterInitView(views.APIView):
+class VerifyOTPView(views.APIView):
     """
-    Direct Customer Registration (No OTP required).
-    Validates customer inputs, ensures uniqueness, creates Customer user and returns JWT tokens.
-    Never allows creating an Admin account.
+    Step 2: Verifies the 6-digit OTP code against the backend hashed record.
+    On successful verification:
+    - Authenticates the customer
+    - Creates the customer account if new
+    - Logs in the customer if already registered
+    - Returns JWT access & refresh tokens
     """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        full_name = request.data.get('full_name', '').strip()
-        email = request.data.get('email', '').strip()
-        mobile = request.data.get('mobile', '').strip()
-        password = request.data.get('password', '')
-        confirm_password = request.data.get('confirm_password', '')
-        address = request.data.get('address', '').strip()
-        village_area = request.data.get('village_area', '').strip()
-        city = request.data.get('city', '').strip()
-        pincode = request.data.get('pincode', '').strip()
+        session_token = request.data.get('session_token', '').strip()
+        raw_mobile = request.data.get('mobile', '')
+        otp_entered = str(request.data.get('otp', '')).strip()
+        full_name_input = request.data.get('full_name', '').strip()
 
-        errors = {}
-
-        # 1. Validate Full Name
-        if not full_name:
-            errors['full_name'] = 'Full name is required.'
-        elif len(full_name) < 2:
-            errors['full_name'] = 'Full name must be at least 2 characters long.'
-
-        # 2. Validate Email Address
-        email_clean = email.lower()
-        if not email:
-            errors['email'] = 'Email address is required.'
-        elif not is_valid_email(email_clean):
-            errors['email'] = 'Please enter a valid email address (e.g. name@example.com).'
-        elif CustomUser.objects.filter(email__iexact=email_clean).exists():
-            errors['email'] = 'An account with this email address already exists. Please sign in instead.'
-        else:
-            admin_email = get_admin_email()
-            if admin_email and email_clean == admin_email.lower():
-                errors['email'] = 'This email address is reserved for store administration and cannot be registered as a customer.'
-
-        # 3. Validate Mobile Number (Indian Phone)
-        if not mobile:
-            errors['mobile'] = 'Mobile number is required.'
-        else:
-            clean_mobile = clean_indian_phone(mobile)
-            if not clean_mobile:
-                errors['mobile'] = 'Please enter a valid 10-digit Indian mobile number.'
-            elif CustomUser.objects.filter(mobile=clean_mobile).exists():
-                errors['mobile'] = 'An account with this mobile number already exists.'
-
-        # 4. Validate Password
-        if not password:
-            errors['password'] = 'Password is required.'
-        elif len(password) < 6:
-            errors['password'] = 'Password must be at least 6 characters long.'
-        elif confirm_password and password != confirm_password:
-            errors['confirm_password'] = 'Passwords do not match. Please verify your password.'
-            if 'password' not in errors:
-                errors['password'] = 'Passwords do not match.'
-
-        if errors:
-            first_error_msg = next(iter(errors.values()))
-            response_data = {
+        clean_mobile = clean_indian_mobile(raw_mobile)
+        if not clean_mobile:
+            return Response({
                 'success': False,
-                'message': first_error_msg,
-                'errors': errors,
-                'detail': first_error_msg,
-            }
-            # Add field-level list mappings for backward compatibility
-            for k, v in errors.items():
-                response_data[k] = [v] if isinstance(v, str) else v
-            return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+                'message': 'Please enter a valid 10-digit Indian mobile number.'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create customer user directly
-        user = CustomUser(
-            email=email_clean,
-            full_name=full_name,
-            mobile=clean_mobile,
-            password=make_password(password),
-            role='customer',
-            is_staff=False,
-            is_superuser=False,
-            address=address,
-            village_area=village_area,
-            city=city or 'Benipatti',
-            state='Bihar',
-            pincode=pincode or '847213',
-        )
-        user.save()
-        Cart.objects.get_or_create(user=user)
+        if not otp_entered or len(otp_entered) != 6 or not otp_entered.isdigit():
+            return Response({
+                'success': False,
+                'message': 'Please enter the valid 6-digit OTP received on your mobile.'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
+        # Look up OTP verification session
+        otp_record = None
+        if session_token:
+            otp_record = OTPVerification.objects.filter(
+                session_token=session_token,
+                mobile=clean_mobile
+            ).first()
+
+        if not otp_record:
+            # Fallback lookup by mobile if session_token was lost
+            otp_record = OTPVerification.objects.filter(
+                mobile=clean_mobile,
+                is_verified=False
+            ).order_by('-created_at').first()
+
+        if not otp_record:
+            return Response({
+                'success': False,
+                'message': 'No active OTP request found for this mobile number. Please request a new OTP.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if otp_record.is_verified:
+            return Response({
+                'success': False,
+                'message': 'This OTP has already been used. Please request a new OTP.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if otp_record.is_expired():
+            return Response({
+                'success': False,
+                'message': 'OTP has expired. Please request a new OTP.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if otp_record.attempts >= otp_record.max_attempts:
+            otp_record.delete()
+            return Response({
+                'success': False,
+                'message': 'Maximum OTP verification attempts exceeded. Please request a new OTP.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate OTP using constant-time cryptographic hash verification
+        is_valid_otp = check_password(otp_entered, otp_record.otp_code)
+        if not is_valid_otp:
+            otp_record.attempts += 1
+            otp_record.save(update_fields=['attempts'])
+            remaining = otp_record.max_attempts - otp_record.attempts
+            return Response({
+                'success': False,
+                'message': f'Invalid OTP code. {remaining} {"attempt" if remaining == 1 else "attempts"} remaining.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark OTP as verified & consumed
+        otp_record.is_verified = True
+        otp_record.save(update_fields=['is_verified'])
+
+        # Create or fetch Customer User
+        user = CustomUser.objects.filter(mobile=clean_mobile).first()
+        is_new = False
+
+        if not user:
+            is_new = True
+            name = full_name_input or otp_record.payload.get('full_name') or f"Customer {clean_mobile[-4:]}"
+            user = CustomUser(
+                mobile=clean_mobile,
+                email=None,
+                full_name=name,
+                role='customer',
+                is_staff=False,
+                is_superuser=False,
+                city='Benipatti',
+                state='Bihar',
+                pincode='847213'
+            )
+            user.save()
+            Cart.objects.get_or_create(user=user)
+        else:
+            # If customer previously had default name and provided a real name
+            if full_name_input and ('Customer' in user.full_name or len(user.full_name) <= 3):
+                user.full_name = full_name_input
+                user.save(update_fields=['full_name', 'updated_at'])
+            Cart.objects.get_or_create(user=user)
+
+        # Clean up verified OTP records
+        OTPVerification.objects.filter(mobile=clean_mobile).delete()
+
+        # Issue JWT Access & Refresh Tokens
         refresh = RefreshToken.for_user(user)
+        user_data = UserProfileSerializer(user).data
+
+        welcome_msg = (
+            f"Welcome to Upendra General Stores, {user.full_name}!"
+            if is_new else
+            f"Namaste, {user.full_name}! Login successful."
+        )
+
         return Response({
             'success': True,
-            'message': 'Account created successfully! Welcome to Upendra General Stores.',
+            'message': welcome_msg,
             'tokens': {
                 'access': str(refresh.access_token),
                 'refresh': str(refresh),
             },
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'full_name': user.full_name,
-                'mobile': user.mobile,
-                'role': 'customer',
-                'is_admin': False,
-                'address': user.address,
-                'village_area': user.village_area,
-                'city': user.city,
-                'state': user.state,
-                'pincode': user.pincode,
-                'profile_image': None,
-            }
-        }, status=status.HTTP_201_CREATED)
+            'user': user_data
+        }, status=status.HTTP_200_OK)
 
 
-
-class CustomTokenObtainPairView(views.APIView):
+class ResendOTPView(views.APIView):
     """
-    Direct login for customer.
+    Resends a new OTP to the customer's phone with cooldown protection.
     """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        request.data._mutable = True if hasattr(request.data, '_mutable') else None
-        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
-        data['role'] = 'customer'
-        request._full_data = data
-        return LoginInitView().post(request)
+        session_token = request.data.get('session_token', '').strip()
+        raw_mobile = request.data.get('mobile', '')
+
+        clean_mobile = clean_indian_mobile(raw_mobile)
+        if not clean_mobile:
+            return Response({
+                'success': False,
+                'message': 'Please enter a valid 10-digit Indian mobile number.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check 60-second cooldown
+        last_otp = OTPVerification.objects.filter(mobile=clean_mobile).order_by('-created_at').first()
+        if last_otp:
+            elapsed = (timezone.now() - last_otp.last_resend_at).total_seconds()
+            if elapsed < 60:
+                time_left = int(60 - elapsed)
+                return Response({
+                    'success': False,
+                    'message': f'Please wait {time_left} seconds before requesting a new OTP.',
+                    'cooldown_seconds': time_left
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        # Generate new OTP
+        otp_code = str(secrets.randbelow(900000) + 100000)
+        new_session_token = secrets.token_hex(32)
+        otp_hash = make_password(otp_code)
+
+        # Dispatch Real SMS
+        sms_sent, sms_msg = SMSService.send_otp_sms(clean_mobile, otp_code)
+        if not sms_sent:
+            return Response({
+                'success': False,
+                'message': sms_msg or 'Failed to send SMS OTP. Please try again.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Invalidate old and create new
+        OTPVerification.objects.filter(mobile=clean_mobile).delete()
+        OTPVerification.objects.create(
+            session_token=new_session_token,
+            mobile=clean_mobile,
+            otp_code=otp_hash,
+            purpose='login',
+            role='customer',
+            expires_at=timezone.now() + timedelta(minutes=5)
+        )
+
+        return Response({
+            'success': True,
+            'message': 'A new OTP has been sent to your mobile number via SMS.',
+            'session_token': new_session_token,
+            'expires_in': 300
+        }, status=status.HTTP_200_OK)
 
 
-class AdminTokenObtainPairView(views.APIView):
+# =====================================================================
+# Admin Direct Authentication View (Separate from Customer OTP)
+# =====================================================================
+
+class AdminLoginView(views.APIView):
     """
-    Direct login for admin.
+    Dedicated Administrator Login Endpoint.
+    Authenticates store administrator using admin credentials (email or mobile + password)
+    and verifies active admin role/permissions on the backend.
     """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        request.data._mutable = True if hasattr(request.data, '_mutable') else None
-        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
-        data['role'] = 'admin'
-        request._full_data = data
-        return LoginInitView().post(request)
+        email_or_mobile = request.data.get('email', '') or request.data.get('username', '') or request.data.get('mobile', '')
+        password = request.data.get('password', '')
+
+        if not email_or_mobile or not password:
+            return Response({
+                'detail': 'Admin username/email and password are required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        ident = str(email_or_mobile).strip().lower()
+        clean_mob = clean_indian_mobile(ident)
+
+        # Find admin user by email or mobile
+        user = None
+        if clean_mob:
+            user = CustomUser.objects.filter(mobile=clean_mob).first()
+        if not user:
+            user = CustomUser.objects.filter(email__iexact=ident).first()
+
+        if not user or not user.check_password(password):
+            return Response({
+                'detail': 'Invalid administrator credentials.'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not (user.role == 'admin' or user.is_staff or user.is_superuser):
+            return Response({
+                'detail': 'Access Denied: You do not possess administrator privileges.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        refresh = RefreshToken.for_user(user)
+        user_data = UserProfileSerializer(user).data
+
+        return Response({
+            'message': f'Welcome to Upendra General Stores Admin Suite, {user.full_name}!',
+            'tokens': {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            },
+            'user': user_data
+        }, status=status.HTTP_200_OK)
 
 
-class RegisterView(views.APIView):
-    """
-    Direct customer registration.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        return RegisterInitView().post(request)
-
-
+# =====================================================================
+# Customer Profile View
+# =====================================================================
 
 class UserProfileView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -377,6 +423,10 @@ class UserProfileView(views.APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+# =====================================================================
+# Store Catalog & Product CRUD ViewSets
+# =====================================================================
+
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -386,7 +436,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Category.objects.all()
-        if not (self.request.user and self.request.user.is_authenticated and self.request.user.is_admin_user):
+        if not check_is_admin(self.request.user):
             qs = qs.filter(is_active=True)
         return qs
 
@@ -402,7 +452,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         qs = Product.objects.select_related('category').all()
         
         # Filtering for customers vs admin
-        is_admin = self.request.user.is_authenticated and self.request.user.is_admin_user
+        is_admin = check_is_admin(self.request.user)
         if not is_admin:
             qs = qs.filter(is_available=True)
 
@@ -414,7 +464,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             else:
                 qs = qs.filter(category__slug=category)
 
-        # Search filter (name, hindi_name, description, category name)
+        # Search filter
         search = self.request.query_params.get('search')
         if search:
             qs = qs.filter(
@@ -445,6 +495,10 @@ class ProductViewSet(viewsets.ModelViewSet):
         return qs
 
 
+# =====================================================================
+# Shopping Cart Views
+# =====================================================================
+
 class CartView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -458,43 +512,43 @@ class CartItemAddView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        cart, _ = Cart.objects.get_or_create(user=request.user)
         product_id = request.data.get('product_id')
-        quantity = Decimal(str(request.data.get('quantity', '1')))
+        quantity = Decimal(str(request.data.get('quantity', 1)))
         unit = request.data.get('unit', 'kg')
 
+        if not product_id:
+            return Response({'error': 'product_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.get(id=product_id, is_available=True)
         except Product.DoesNotExist:
-            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Product not found or unavailable'}, status=status.HTTP_404_NOT_FOUND)
 
-        if not product.is_available or product.stock_quantity <= 0:
-            return Response({'error': 'Product is currently out of stock'}, status=status.HTTP_400_BAD_REQUEST)
+        cart, _ = Cart.objects.get_or_create(user=request.user)
 
-        # Calculate unit price and subtotal
-        if unit == 'g' and product.unit == 'kg':
-            subtotal = (product.price * (quantity / Decimal('1000'))).quantize(Decimal('0.01'))
-            unit_price = subtotal
+        # Calculate unit_price based on unit
+        if unit == 'g':
+            if product.unit == 'kg':
+                unit_price = (Decimal(str(product.price)) * quantity / Decimal('1000')).quantize(Decimal('0.01'))
+            else:
+                unit_price = (Decimal(str(product.price)) * quantity).quantize(Decimal('0.01'))
         else:
-            subtotal = (product.price * quantity).quantize(Decimal('0.01'))
-            unit_price = product.price
+            unit_price = (Decimal(str(product.price)) * quantity).quantize(Decimal('0.01'))
 
-        # Check existing item
-        item, created = CartItem.objects.get_or_create(
+        cart_item, created = CartItem.objects.get_or_create(
             cart=cart,
             product=product,
             unit=unit,
             defaults={
                 'quantity': quantity,
                 'unit_price': unit_price,
-                'subtotal': subtotal
+                'subtotal': unit_price,
             }
         )
 
         if not created:
-            item.quantity += quantity
-            item.subtotal = (product.price * (item.quantity / Decimal('1000')) if (unit == 'g' and product.unit == 'kg') else product.price * item.quantity).quantize(Decimal('0.01'))
-            item.save()
+            cart_item.quantity += quantity
+            cart_item.save()
 
         serializer = CartSerializer(cart)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -504,34 +558,32 @@ class CartItemUpdateView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def put(self, request, item_id):
+        quantity = Decimal(str(request.data.get('quantity', 1)))
         try:
-            item = CartItem.objects.get(id=item_id, cart__user=request.user)
+            cart_item = CartItem.objects.get(id=item_id, cart__user=request.user)
         except CartItem.DoesNotExist:
             return Response({'error': 'Cart item not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        quantity = Decimal(str(request.data.get('quantity', item.quantity)))
         if quantity <= 0:
-            item.delete()
+            cart_item.delete()
         else:
-            item.quantity = quantity
-            if item.unit == 'g' and item.product.unit == 'kg':
-                item.subtotal = (item.product.price * (quantity / Decimal('1000'))).quantize(Decimal('0.01'))
-            else:
-                item.subtotal = (item.product.price * quantity).quantize(Decimal('0.01'))
-            item.save()
+            cart_item.quantity = quantity
+            cart_item.save()
 
-        serializer = CartSerializer(item.cart)
+        cart = Cart.objects.get(user=request.user)
+        serializer = CartSerializer(cart)
         return Response(serializer.data)
 
     def delete(self, request, item_id):
         try:
-            item = CartItem.objects.get(id=item_id, cart__user=request.user)
-            cart = item.cart
-            item.delete()
-            serializer = CartSerializer(cart)
-            return Response(serializer.data)
+            cart_item = CartItem.objects.get(id=item_id, cart__user=request.user)
+            cart_item.delete()
         except CartItem.DoesNotExist:
             return Response({'error': 'Cart item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        cart = Cart.objects.get(user=request.user)
+        serializer = CartSerializer(cart)
+        return Response(serializer.data)
 
 
 class CartClearView(views.APIView):
@@ -544,100 +596,72 @@ class CartClearView(views.APIView):
         return Response(serializer.data)
 
 
-class OrderViewSet(viewsets.ModelViewSet):
-    queryset = Order.objects.all()
-    serializer_class = OrderSerializer
-    lookup_field = 'id'
+# =====================================================================
+# Order Processing Views
+# =====================================================================
 
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'create']:
-            return [permissions.AllowAny()]
-        return [IsAdminRole()]
+class OrderViewSet(viewsets.ModelViewSet):
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'order_id'
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_authenticated and user.is_admin_user:
-            return Order.objects.prefetch_related('items').all()
-        elif user.is_authenticated:
-            return Order.objects.prefetch_related('items').filter(user=user)
-        return Order.objects.none()
+        if check_is_admin(user):
+            qs = Order.objects.prefetch_related('items').all()
+            status_filter = self.request.query_params.get('status')
+            if status_filter:
+                qs = qs.filter(status=status_filter)
+            return qs
+        return Order.objects.filter(user=user).prefetch_related('items')
 
     def create(self, request, *args, **kwargs):
-        data = request.data
-        user = request.user if request.user.is_authenticated else None
-        
-        customer_name = data.get('customer_name', user.full_name if user else '')
-        customer_email = data.get('customer_email', user.email if user else '')
-        customer_phone = data.get('customer_phone', user.mobile if user else '')
-        delivery_address = data.get('delivery_address', user.address if user else '')
-        village_area = data.get('village_area', user.village_area if user else '')
-        city = data.get('city', user.city if user and user.city else 'Local Area')
-        state = data.get('state', 'State')
-        pincode = data.get('pincode', user.pincode if user else '')
-        latitude = data.get('latitude')
-        longitude = data.get('longitude')
-        payment_method = data.get('payment_method', 'cod')
-        notes = data.get('notes', '')
+        data = request.data.copy()
+        items_data = data.pop('items', [])
 
-        # Items can come from user's current cart or payload directly
-        raw_items = data.get('items', [])
-        
-        if not raw_items and user:
-            cart, _ = Cart.objects.get_or_create(user=user)
-            raw_items = [
-                {
-                    'product_id': item.product.id,
-                    'product_name': item.product.name,
-                    'category_name': item.product.category.name,
-                    'quantity': item.quantity,
-                    'unit': item.unit,
-                    'unit_price': item.unit_price,
-                    'subtotal': item.subtotal,
-                    'product_image': item.product.image
-                }
-                for item in cart.items.all()
-            ]
+        if not items_data:
+            return Response({'error': 'Order must contain at least one item.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not raw_items:
-            return Response({'error': 'Order cannot be empty. Please add items to cart.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Calculate subtotal & delivery charges
+        store_settings, _ = StoreSetting.objects.get_or_create(id=1)
+        subtotal = Decimal('0.00')
 
-        # Calculate totals
-        subtotal = sum((Decimal(str(item.get('subtotal', 0))) for item in raw_items), Decimal('0.00'))
-        
-        settings = StoreSetting.objects.first()
-        free_above = settings.free_delivery_above if settings else Decimal('249.00')
-        standard_delivery = settings.delivery_charge if settings else Decimal('30.00')
-        
-        if subtotal >= free_above or payment_method == 'store_pickup':
-            delivery_charge = Decimal('0.00')
-        else:
-            delivery_charge = standard_delivery
+        for item in items_data:
+            item_subtotal = Decimal(str(item.get('subtotal', 0)))
+            subtotal += item_subtotal
+
+        delivery_charge = Decimal('0.00')
+        if data.get('payment_method') != 'store_pickup':
+            if subtotal < store_settings.free_delivery_above:
+                delivery_charge = store_settings.delivery_charge
 
         total_amount = subtotal + delivery_charge
 
+        user_obj = request.user if request.user.is_authenticated else None
+
         order = Order.objects.create(
-            user=user,
-            customer_name=customer_name,
-            customer_email=customer_email,
-            customer_phone=customer_phone,
-            delivery_address=delivery_address,
-            village_area=village_area,
-            city=city,
-            state=state,
-            pincode=pincode,
-            latitude=latitude,
-            longitude=longitude,
+            user=user_obj,
+            customer_name=data.get('customer_name', request.user.full_name if user_obj else 'Customer'),
+            customer_email=data.get('customer_email', request.user.email or '' if user_obj else ''),
+            customer_phone=data.get('customer_phone', request.user.mobile if user_obj else ''),
+            delivery_address=data.get('delivery_address', ''),
+            village_area=data.get('village_area', ''),
+            city=data.get('city', 'Benipatti'),
+            state=data.get('state', 'Bihar'),
+            pincode=data.get('pincode', '847213'),
+            latitude=data.get('latitude'),
+            longitude=data.get('longitude'),
             subtotal=subtotal,
             delivery_charge=delivery_charge,
             total_amount=total_amount,
-            payment_method=payment_method,
-            notes=notes,
-            status='pending'
+            payment_method=data.get('payment_method', 'cod'),
+            payment_status='pending',
+            notes=data.get('notes', ''),
         )
 
-        for item_data in raw_items:
+        for item_data in items_data:
             product = None
-            if 'product_id' in item_data and item_data['product_id']:
+            if item_data.get('product_id'):
                 try:
                     product = Product.objects.get(id=item_data['product_id'])
                 except Product.DoesNotExist:
@@ -646,20 +670,14 @@ class OrderViewSet(viewsets.ModelViewSet):
             OrderItem.objects.create(
                 order=order,
                 product=product,
-                product_name=item_data.get('product_name', product.name if product else 'Grocery Item'),
-                category_name=item_data.get('category_name', product.category.name if product else ''),
+                product_name=item_data.get('product_name', product.name if product else 'Item'),
+                category_name=item_data.get('category_name', ''),
                 quantity=Decimal(str(item_data.get('quantity', 1))),
                 unit=item_data.get('unit', 'kg'),
-                unit_price=Decimal(str(item_data.get('unit_price', product.price if product else 0))),
+                unit_price=Decimal(str(item_data.get('unit_price', 0))),
                 subtotal=Decimal(str(item_data.get('subtotal', 0))),
-                product_image=item_data.get('product_image', product.image if product else '')
+                product_image=item_data.get('product_image', ''),
             )
-
-        # Clear cart immediately for offline payments (COD / store pickup)
-        # For online payments (UPI, Card), cart is safely cleared upon payment verification
-        if user and payment_method in ['cod', 'store_pickup', 'upi_cod']:
-            cart, _ = Cart.objects.get_or_create(user=user)
-            cart.items.all().delete()
 
         serializer = OrderSerializer(order)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -670,10 +688,7 @@ class OrderStatusUpdateView(views.APIView):
 
     def put(self, request, order_id):
         try:
-            if str(order_id).isdigit():
-                order = Order.objects.get(id=order_id)
-            else:
-                order = Order.objects.get(order_id=order_id)
+            order = Order.objects.get(order_id=order_id)
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -681,17 +696,8 @@ class OrderStatusUpdateView(views.APIView):
         new_payment_status = request.data.get('payment_status')
 
         if new_status:
-            if new_status not in dict(Order.STATUS_CHOICES):
-                return Response({'error': f'Invalid status. Allowed: {list(dict(Order.STATUS_CHOICES).keys())}'}, status=status.HTTP_400_BAD_REQUEST)
             order.status = new_status
-            if new_status == 'delivered' and order.payment_method in ['cod', 'upi_cod'] and order.payment_status != 'paid':
-                order.payment_status = 'paid'
-                if not order.paid_at:
-                    order.paid_at = timezone.now()
-
         if new_payment_status:
-            if new_payment_status not in dict(Order.PAYMENT_STATUS_CHOICES):
-                return Response({'error': f'Invalid payment status. Allowed: {list(dict(Order.PAYMENT_STATUS_CHOICES).keys())}'}, status=status.HTTP_400_BAD_REQUEST)
             order.payment_status = new_payment_status
             if new_payment_status == 'paid' and not order.paid_at:
                 order.paid_at = timezone.now()
@@ -701,48 +707,41 @@ class OrderStatusUpdateView(views.APIView):
         return Response(serializer.data)
 
 
+# =====================================================================
+# Admin Dashboard & Management Views
+# =====================================================================
 
 class AdminDashboardView(views.APIView):
     permission_classes = [IsAdminRole]
 
     def get(self, request):
-        total_products = Product.objects.count()
-        low_stock_products = Product.objects.filter(stock_quantity__lte=5).count()
-        out_of_stock_products = Product.objects.filter(stock_quantity__lte=0).count()
-        total_customers = CustomUser.objects.filter(role='customer').count()
-        
+        today = timezone.now().date()
+        today_orders = Order.objects.filter(created_at__date=today)
         all_orders = Order.objects.all()
-        total_orders = all_orders.count()
-        pending_orders = all_orders.filter(status='pending').count()
-        completed_orders = all_orders.filter(status='delivered').count()
-        cancelled_orders = all_orders.filter(status='cancelled').count()
-        
-        total_sales = all_orders.exclude(status='cancelled').aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
 
-        # Recent 5 orders
-        recent_orders = OrderSerializer(all_orders.order_by('-created_at')[:6], many=True).data
+        total_sales = all_orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+        today_sales = today_orders.filter(payment_status='paid').aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
 
-        # Category sales distribution
-        top_categories = (
-            Category.objects.annotate(
-                prod_count=Count('products'),
-            ).values('id', 'name', 'hindi_name', 'prod_count')
-        )
+        total_orders_count = all_orders.count()
+        today_orders_count = today_orders.count()
+        pending_orders_count = all_orders.filter(status='pending').count()
+        total_products = Product.objects.count()
+        low_stock_products = Product.objects.filter(stock_quantity__lte=5, is_available=True).count()
+        total_customers = CustomUser.objects.filter(role='customer').count()
+
+        recent_orders = Order.objects.prefetch_related('items').order_by('-created_at')[:8]
+        recent_orders_data = OrderSerializer(recent_orders, many=True).data
 
         return Response({
-            'metrics': {
-                'total_sales': total_sales,
-                'total_orders': total_orders,
-                'pending_orders': pending_orders,
-                'completed_orders': completed_orders,
-                'cancelled_orders': cancelled_orders,
-                'total_products': total_products,
-                'low_stock_products': low_stock_products,
-                'out_of_stock_products': out_of_stock_products,
-                'total_customers': total_customers,
-            },
-            'recent_orders': recent_orders,
-            'categories': top_categories,
+            'total_sales': total_sales,
+            'today_sales': today_sales,
+            'total_orders': total_orders_count,
+            'today_orders': today_orders_count,
+            'pending_orders': pending_orders_count,
+            'total_products': total_products,
+            'low_stock_products': low_stock_products,
+            'total_customers': total_customers,
+            'recent_orders': recent_orders_data,
         })
 
 
@@ -759,8 +758,8 @@ class AdminCustomerListView(views.APIView):
             {
                 'id': c.id,
                 'full_name': c.full_name,
-                'email': c.email,
                 'mobile': c.mobile,
+                'email': c.email or '',
                 'address': c.address,
                 'village_area': c.village_area,
                 'city': c.city,
@@ -797,7 +796,7 @@ class AdminQuickPriceStockUpdateView(views.APIView):
             product.is_available = bool(is_available)
 
         product.save()
-        serializer = ProductSerializer(product)
+        serializer = ProductSerializer(product, context={'request': request})
         return Response(serializer.data)
 
 
@@ -805,13 +804,13 @@ class StoreSettingView(views.APIView):
     permission_classes = [IsAdminUserOrReadOnly]
 
     def get(self, request):
-        settings, _ = StoreSetting.objects.get_or_create(id=1)
-        serializer = StoreSettingSerializer(settings)
+        settings_obj, _ = StoreSetting.objects.get_or_create(id=1)
+        serializer = StoreSettingSerializer(settings_obj)
         return Response(serializer.data)
 
     def put(self, request):
-        settings, _ = StoreSetting.objects.get_or_create(id=1)
-        serializer = StoreSettingSerializer(settings, data=request.data, partial=True)
+        settings_obj, _ = StoreSetting.objects.get_or_create(id=1)
+        serializer = StoreSettingSerializer(settings_obj, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -827,7 +826,7 @@ class ImageUploadView(views.APIView):
         if not file_obj:
             return Response({'error': 'No image file provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-        media_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'media', 'products')
+        media_dir = os.path.join(settings.MEDIA_ROOT, 'products')
         os.makedirs(media_dir, exist_ok=True)
         
         file_path = os.path.join(media_dir, file_obj.name)
@@ -839,12 +838,11 @@ class ImageUploadView(views.APIView):
         return Response({'url': image_url, 'filename': file_obj.name}, status=status.HTTP_201_CREATED)
 
 
+# =====================================================================
+# Payment Gateway Views (Razorpay / UPI)
+# =====================================================================
+
 class CreatePaymentOrderView(views.APIView):
-    """
-    Initializes a secure Indian payment gateway (Razorpay) order for the specific Order instance.
-    Generates dynamic UPI QR & UPI intent links representing the exact order amount (e.g. ₹249).
-    Never exposes backend secret keys.
-    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -862,33 +860,24 @@ class CreatePaymentOrderView(views.APIView):
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Authorization check: only order owner or admin or guest right after creation
-        if request.user.is_authenticated and order.user and order.user != request.user and not request.user.is_admin_user:
+        if request.user.is_authenticated and order.user and order.user != request.user and not check_is_admin(request.user):
             return Response({'error': 'Unauthorized to initialize payment for this order'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Check if already paid
         if order.payment_status == 'paid':
             return Response({
                 'error': 'This order has already been paid for.',
                 'order': OrderSerializer(order).data
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Update order payment method
         order.payment_method = payment_method
         order.payment_status = 'processing'
         order.save(update_fields=['payment_method', 'payment_status', 'updated_at'])
 
-        # Create gateway order parameters
         gateway_data = create_gateway_order(order, method_hint=payment_method)
         return Response(gateway_data, status=status.HTTP_200_OK)
 
 
 class VerifyPaymentView(views.APIView):
-    """
-    Cryptographically verifies the Razorpay payment signature on the Django backend.
-    Only marks the order as PAID after HMAC-SHA256 signature and gateway status confirmation.
-    Never trusts client success flags.
-    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -908,7 +897,6 @@ class VerifyPaymentView(views.APIView):
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Duplicate payment / Idempotency protection
         if order.payment_status == 'paid' and order.transaction_id == razorpay_payment_id:
             return Response({
                 'success': True,
@@ -916,7 +904,6 @@ class VerifyPaymentView(views.APIView):
                 'order': OrderSerializer(order).data
             }, status=status.HTTP_200_OK)
 
-        # 1. Cryptographic Signature Verification
         is_valid_sig, sig_msg = verify_payment_signature(
             razorpay_order_id=razorpay_order_id or order.gateway_order_id,
             razorpay_payment_id=razorpay_payment_id,
@@ -926,13 +913,11 @@ class VerifyPaymentView(views.APIView):
         if not is_valid_sig:
             order.payment_status = 'failed'
             order.save(update_fields=['payment_status', 'updated_at'])
-            logger.warning(f"Payment signature verification failed for order {order.order_id}: {sig_msg}")
             return Response({
                 'success': False,
                 'error': f'Payment signature verification failed: {sig_msg}'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # 2. Gateway Status & Amount Verification
         is_verified_gw, gw_msg = verify_payment_with_gateway(
             payment_id=razorpay_payment_id,
             expected_amount=order.total_amount,
@@ -942,44 +927,31 @@ class VerifyPaymentView(views.APIView):
         if not is_verified_gw:
             order.payment_status = 'failed'
             order.save(update_fields=['payment_status', 'updated_at'])
-            logger.warning(f"Gateway payment verification failed for order {order.order_id}: {gw_msg}")
             return Response({
                 'success': False,
                 'error': f'Payment gateway verification failed: {gw_msg}'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # 3. Mark Order as PAID only now
         order.payment_status = 'paid'
         order.transaction_id = razorpay_payment_id
         order.payment_signature = razorpay_signature or ''
         order.paid_at = timezone.now()
-        if order.status == 'pending':
-            order.status = 'confirmed'
-        order.save()
-
-        # Clear cart for user upon verified payment
-        if order.user:
-            cart, _ = Cart.objects.get_or_create(user=order.user)
-            cart.items.all().delete()
-
-        logger.info(f"Order {order.order_id} successfully marked as PAID with txn ID {razorpay_payment_id}")
+        order.status = 'confirmed'
+        order.save(update_fields=['payment_status', 'transaction_id', 'payment_signature', 'paid_at', 'status', 'updated_at'])
 
         return Response({
             'success': True,
-            'message': 'Payment verified and marked as PAID successfully!',
+            'message': 'Payment successfully verified!',
             'order': OrderSerializer(order).data
         }, status=status.HTTP_200_OK)
 
 
 class PaymentFailureView(views.APIView):
-    """
-    Records payment cancellation or failure without marking the order as paid.
-    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
         order_id = request.data.get('order_id')
-        reason = request.data.get('reason', 'Payment cancelled by customer or rejected by gateway.')
+        reason = request.data.get('reason', 'Payment cancelled or failed.')
 
         if not order_id:
             return Response({'error': 'order_id is required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -994,74 +966,48 @@ class PaymentFailureView(views.APIView):
 
         if order.payment_status != 'paid':
             order.payment_status = 'failed'
-            if reason:
-                order.notes = f"{order.notes}\n[Payment Cancelled/Failed]: {reason}".strip()
+            order.notes = f"{order.notes or ''}\n[Payment Failure: {reason}]".strip()
             order.save(update_fields=['payment_status', 'notes', 'updated_at'])
 
         return Response({
             'success': True,
-            'message': 'Payment status updated to failed/cancelled.',
+            'message': 'Failure logged',
             'order': OrderSerializer(order).data
         }, status=status.HTTP_200_OK)
 
 
 class PaymentWebhookView(views.APIView):
-    """
-    Webhook endpoint to asynchronously process verified events directly from Razorpay.
-    """
     permission_classes = [permissions.AllowAny]
-    parser_classes = [JSONParser]
 
     def post(self, request):
-        raw_body = request.body
-        signature = request.headers.get('X-Razorpay-Signature', '')
+        raw_body = request.body.decode('utf-8')
+        received_signature = request.headers.get('X-Razorpay-Signature', '')
 
-        # Verify signature if secret configured
-        if not verify_webhook_signature(raw_body, signature):
-            logger.warning("Webhook signature verification failed or not configured.")
+        is_valid = verify_webhook_signature(raw_body, received_signature)
+        if not is_valid:
+            return Response({'error': 'Invalid webhook signature'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            payload = json.loads(raw_body.decode('utf-8'))
-            event = payload.get('event')
-            entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
-            
-            payment_id = entity.get('id')
-            gateway_order_id = entity.get('order_id')
-            notes = entity.get('notes', {})
-            order_id = notes.get('order_id')
+            event_data = json.loads(raw_body)
+            event_type = event_data.get('event')
+            payload = event_data.get('payload', {}).get('payment', {}).get('entity', {})
+            razorpay_order_id = payload.get('order_id')
+            razorpay_payment_id = payload.get('id')
+            payment_status = payload.get('status')
 
-            order = None
-            if order_id:
-                try:
-                    order = Order.objects.get(order_id=order_id)
-                except Order.DoesNotExist:
-                    pass
-
-            if not order and gateway_order_id:
-                try:
-                    order = Order.objects.get(gateway_order_id=gateway_order_id)
-                except Order.DoesNotExist:
-                    pass
-
-            if order:
-                if event in ['payment.captured', 'order.paid']:
-                    if order.payment_status != 'paid':
+            if razorpay_order_id:
+                order = Order.objects.filter(gateway_order_id=razorpay_order_id).first()
+                if order:
+                    if event_type == 'payment.captured' or payment_status == 'captured':
                         order.payment_status = 'paid'
-                        order.transaction_id = payment_id
+                        order.transaction_id = razorpay_payment_id
                         order.paid_at = timezone.now()
-                        if order.status == 'pending':
-                            order.status = 'confirmed'
+                        order.status = 'confirmed'
                         order.save()
-                        if order.user:
-                            cart, _ = Cart.objects.get_or_create(user=order.user)
-                            cart.items.all().delete()
-                elif event == 'payment.failed':
-                    if order.payment_status != 'paid':
+                    elif event_type == 'payment.failed':
                         order.payment_status = 'failed'
-                        order.save(update_fields=['payment_status', 'updated_at'])
-
-            return Response({'status': 'ok'}, status=status.HTTP_200_OK)
+                        order.save()
         except Exception as e:
-            logger.error(f"Error handling payment webhook: {e}")
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            logger.error(f"Error handling payment webhook: {str(e)}")
 
+        return Response({'status': 'ok'}, status=status.HTTP_200_OK)

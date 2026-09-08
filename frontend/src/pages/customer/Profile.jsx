@@ -317,7 +317,12 @@ const Profile = () => {
             <h3 className="font-outfit font-bold text-lg text-kirana-brown-dark">
               {user?.full_name}
             </h3>
-            <p className="text-xs text-kirana-brown-muted">{user?.email}</p>
+            {user?.mobile && (
+              <p className="text-xs font-mono font-bold text-kirana-orange">+91 {user.mobile}</p>
+            )}
+            {user?.email && (
+              <p className="text-[11px] text-kirana-brown-muted">{user.email}</p>
+            )}
             <span className="inline-block mt-2 text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
               {user?.role === 'admin' ? '★ Store Admin' : 'Verified Customer'}
             </span>

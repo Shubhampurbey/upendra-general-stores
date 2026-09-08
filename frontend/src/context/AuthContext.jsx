@@ -23,9 +23,25 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const login = async (email, password, role = 'customer') => {
+  // Customer Step 1: Send OTP
+  const sendOtp = async (mobile, fullName = '') => {
     try {
-      const res = await AuthService.loginInit(email, password, role);
+      const res = await AuthService.sendOtp(mobile, fullName);
+      if (res.message) {
+        toast.success(res.message);
+      }
+      return res;
+    } catch (err) {
+      const msg = err.response?.data?.message || err.response?.data?.detail || 'Failed to send OTP. Please check your mobile number.';
+      toast.error(msg);
+      throw err;
+    }
+  };
+
+  // Customer Step 2: Verify OTP
+  const verifyOtp = async (sessionToken, mobile, otp, fullName = '') => {
+    try {
+      const res = await AuthService.verifyOtp(sessionToken, mobile, otp, fullName);
       const { tokens, user: userData, message } = res;
 
       if (tokens?.access) {
@@ -35,61 +51,49 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
       }
 
-      if (userData?.role === 'admin' || userData?.is_admin) {
-        toast.success(message || `Welcome to Admin Suite, ${userData.full_name}!`);
-      } else {
-        toast.success(message || `Namaste, ${userData.full_name}! Welcome.`);
-      }
+      toast.success(message || `Welcome to Upendra General Stores!`);
       return userData;
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Invalid credentials or unauthorized account. Please check email and password.';
+      const msg = err.response?.data?.message || err.response?.data?.detail || 'Invalid or expired OTP. Please try again.';
       toast.error(msg);
       throw err;
     }
   };
 
-  const loginInit = login;
-
-  const register = async (userData) => {
+  // Customer Resend OTP
+  const resendOtp = async (sessionToken, mobile) => {
     try {
-      const res = await AuthService.registerInit(userData);
-      const { tokens, user: newUser, message } = res;
+      const res = await AuthService.resendOtp(sessionToken, mobile);
+      toast.success(res.message || 'New OTP sent to your mobile via SMS.');
+      return res;
+    } catch (err) {
+      const msg = err.response?.data?.message || err.response?.data?.detail || 'Could not resend OTP. Please wait before trying again.';
+      toast.error(msg);
+      throw err;
+    }
+  };
+
+  // Dedicated Admin Login
+  const adminLogin = async (emailOrMobile, password) => {
+    try {
+      const res = await AuthService.adminLogin(emailOrMobile, password);
+      const { tokens, user: userData, message } = res;
 
       if (tokens?.access) {
         localStorage.setItem('upendra_access_token', tokens.access);
         localStorage.setItem('upendra_refresh_token', tokens.refresh);
-        localStorage.setItem('upendra_user', JSON.stringify(newUser));
-        setUser(newUser);
+        localStorage.setItem('upendra_user', JSON.stringify(userData));
+        setUser(userData);
       }
 
-      toast.success(message || 'Account created successfully! Welcome to Upendra General Stores.');
-      return newUser;
+      toast.success(message || `Welcome to Admin Suite, ${userData.full_name}!`);
+      return userData;
     } catch (err) {
-      const errData = err.response?.data;
-      let msg = 'Registration failed. Please check your inputs.';
-      if (errData) {
-        if (typeof errData === 'object') {
-          if (errData.message && typeof errData.message === 'string') {
-            msg = errData.message;
-          } else if (errData.detail && typeof errData.detail === 'string') {
-            msg = errData.detail;
-          } else {
-            msg = Object.entries(errData)
-              .filter(([k]) => k !== 'errors' && k !== 'success')
-              .map(([key, val]) => `${key}: ${Array.isArray(val) ? val.join(' ') : val}`)
-              .join(' | ');
-          }
-        } else if (typeof errData === 'string' && !errData.includes('<!DOCTYPE')) {
-          msg = errData;
-        }
-      }
+      const msg = err.response?.data?.detail || err.response?.data?.message || 'Invalid administrator credentials or unauthorized account.';
       toast.error(msg);
       throw err;
     }
   };
-
-
-  const registerInit = register;
 
   const logout = () => {
     localStorage.removeItem('upendra_access_token');
@@ -108,7 +112,8 @@ export const AuthProvider = ({ children }) => {
       toast.success('Profile updated successfully!');
       return newUser;
     } catch (err) {
-      toast.error('Failed to update profile');
+      const msg = err.response?.data?.message || err.response?.data?.detail || 'Failed to update profile.';
+      toast.error(msg);
       throw err;
     }
   };
@@ -120,10 +125,10 @@ export const AuthProvider = ({ children }) => {
         loading,
         isAuthenticated: !!user,
         isAdmin: !!(user?.role === 'admin' || user?.is_admin),
-        login,
-        loginInit,
-        register,
-        registerInit,
+        sendOtp,
+        verifyOtp,
+        resendOtp,
+        adminLogin,
         logout,
         updateUserProfile,
       }}
@@ -134,4 +139,3 @@ export const AuthProvider = ({ children }) => {
 };
 
 export const useAuth = () => useContext(AuthContext);
-

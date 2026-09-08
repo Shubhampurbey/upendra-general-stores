@@ -4,115 +4,18 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import CustomUser, Category, Product, Cart, CartItem, Order, OrderItem, StoreSetting
 
 
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    username_field = 'email'
-
-    def validate(self, attrs):
-        data = super().validate(attrs)
-        data['user'] = {
-            'id': self.user.id,
-            'email': self.user.email,
-            'full_name': self.user.full_name,
-            'mobile': self.user.mobile,
-            'role': self.user.role,
-            'is_admin': self.user.is_admin_user,
-            'address': self.user.address,
-            'village_area': self.user.village_area,
-            'city': self.user.city,
-            'pincode': self.user.pincode,
-            'profile_image': self.user.profile_image.url if self.user.profile_image else None,
-        }
-        return data
-
-
-class AdminTokenObtainPairSerializer(TokenObtainPairSerializer):
-    username_field = 'email'
-
-    def validate(self, attrs):
-        data = super().validate(attrs)
-        if not self.user.is_admin_user:
-            raise exceptions.AuthenticationFailed('Access Denied: You do not have administrator permissions.')
-        data['user'] = {
-            'id': self.user.id,
-            'email': self.user.email,
-            'full_name': self.user.full_name,
-            'mobile': self.user.mobile,
-            'role': self.user.role,
-            'is_admin': True,
-            'address': self.user.address,
-            'village_area': self.user.village_area,
-            'city': self.user.city,
-            'pincode': self.user.pincode,
-            'profile_image': self.user.profile_image.url if self.user.profile_image else None,
-        }
-        return data
-
-
-class UserRegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=6)
-    confirm_password = serializers.CharField(write_only=True, min_length=6)
-
-    class Meta:
-        model = CustomUser
-        fields = ('id', 'email', 'full_name', 'mobile', 'password', 'confirm_password', 'address', 'village_area', 'city', 'pincode')
-        extra_kwargs = {
-            'address': {'required': False, 'allow_blank': True},
-            'village_area': {'required': False, 'allow_blank': True},
-            'city': {'required': False, 'allow_blank': True},
-            'pincode': {'required': False, 'allow_blank': True},
-        }
-
-    def validate_email(self, value):
-        from .views import is_valid_email
-        email_clean = value.strip().lower()
-        if not is_valid_email(email_clean):
-            raise serializers.ValidationError("Please enter a valid email address (e.g. name@example.com).")
-        if CustomUser.objects.filter(email__iexact=email_clean).exists():
-            raise serializers.ValidationError("An account with this email address already exists. Please sign in instead.")
-        return email_clean
-
-    def validate_mobile(self, value):
-        from .views import clean_indian_phone
-        clean_mobile = clean_indian_phone(value)
-        if not clean_mobile:
-            raise serializers.ValidationError("Please enter a valid 10-digit Indian mobile number.")
-        if CustomUser.objects.filter(mobile=clean_mobile).exists():
-            raise serializers.ValidationError("An account with this mobile number already exists.")
-        return clean_mobile
-
-    def validate(self, attrs):
-        if attrs.get('password') != attrs.get('confirm_password'):
-            raise serializers.ValidationError({"password": "Passwords do not match."})
-        if len(attrs.get('password', '')) < 6:
-            raise serializers.ValidationError({"password": "Password must be at least 6 characters long."})
-        return attrs
-
-    def create(self, validated_data):
-        validated_data.pop('confirm_password', None)
-        password = validated_data.pop('password')
-        email = validated_data.pop('email')
-        # Strictly enforce customer role and standard user privileges on public registration
-        validated_data['role'] = 'customer'
-        validated_data['is_staff'] = False
-        validated_data['is_superuser'] = False
-        user = CustomUser.objects.create_user(
-            email=email,
-            password=password,
-            **validated_data
-        )
-        Cart.objects.get_or_create(user=user)
-        return user
-
-
-
 class UserProfileSerializer(serializers.ModelSerializer):
     is_admin = serializers.BooleanField(source='is_admin_user', read_only=True)
     profile_image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = CustomUser
-        fields = ('id', 'email', 'full_name', 'mobile', 'role', 'is_admin', 'address', 'village_area', 'city', 'state', 'pincode', 'profile_image', 'created_at')
-        read_only_fields = ('id', 'email', 'role', 'is_admin', 'created_at')
+        fields = (
+            'id', 'mobile', 'email', 'full_name', 'role', 'is_admin',
+            'address', 'village_area', 'city', 'state', 'pincode',
+            'profile_image', 'created_at'
+        )
+        read_only_fields = ('id', 'role', 'is_admin', 'created_at')
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -137,21 +40,30 @@ class ProductSerializer(serializers.ModelSerializer):
         )
 
     def to_internal_value(self, data):
+        # Create a mutable copy if QueryDict or dict
         mutable_data = data.copy() if hasattr(data, 'copy') else dict(data)
+        
+        # Handle image field in multipart / json payloads
         if 'image' in mutable_data:
             image_val = mutable_data.get('image')
-            # If image_val is string (existing path/URL or empty), pop it so existing file is kept on update
+            # If image_val is string (existing path/URL, empty string), pop it so the existing image file is preserved
             if isinstance(image_val, str) or image_val is None or image_val == '':
                 mutable_data.pop('image', None)
+
+        # Handle boolean strings from FormData
+        for bool_field in ('is_available', 'is_featured'):
+            if bool_field in mutable_data:
+                val = mutable_data.get(bool_field)
+                if isinstance(val, str):
+                    mutable_data[bool_field] = val.lower() in ('true', '1', 'yes', 'on')
+
         return super().to_internal_value(mutable_data)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if instance.image:
+        if instance.image and instance.image.name:
             image_str = str(instance.image)
-            if image_str.startswith('http://') or image_str.startswith('https://'):
-                data['image'] = image_str
-            elif image_str.startswith('/assets/'):
+            if image_str.startswith(('http://', 'https://', '/assets/')):
                 data['image'] = image_str
             elif hasattr(instance.image, 'url'):
                 request = self.context.get('request')
@@ -213,7 +125,6 @@ class OrderSerializer(serializers.ModelSerializer):
             'transaction_id', 'paid_at', 'status', 'notes', 'items', 'created_at', 'updated_at'
         )
         read_only_fields = ('id', 'order_id', 'created_at', 'updated_at', 'paid_at', 'gateway_order_id')
-
 
 
 class StoreSettingSerializer(serializers.ModelSerializer):

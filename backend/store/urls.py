@@ -3,11 +3,10 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
-    LoginInitView,
-    RegisterInitView,
-    CustomTokenObtainPairView,
-    AdminTokenObtainPairView,
-    RegisterView,
+    SendOTPView,
+    VerifyOTPView,
+    ResendOTPView,
+    AdminLoginView,
     UserProfileView,
     CategoryViewSet,
     ProductViewSet,
@@ -28,20 +27,22 @@ from .views import (
     PaymentWebhookView,
 )
 
-
 router = DefaultRouter()
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'orders', OrderViewSet, basename='order')
 
 urlpatterns = [
-    # Direct Auth endpoints
-    path('auth/login-init/', LoginInitView.as_view(), name='auth_login_init'),
-    path('auth/register-init/', RegisterInitView.as_view(), name='auth_register_init'),
-    path('auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('auth/admin-login/', AdminTokenObtainPairView.as_view(), name='admin_token_obtain_pair'),
+    # Customer Phone + Real OTP Authentication endpoints
+    path('auth/send-otp/', SendOTPView.as_view(), name='auth_send_otp'),
+    path('auth/verify-otp/', VerifyOTPView.as_view(), name='auth_verify_otp'),
+    path('auth/resend-otp/', ResendOTPView.as_view(), name='auth_resend_otp'),
+
+    # Admin Dedicated Authentication endpoint
+    path('auth/admin-login/', AdminLoginView.as_view(), name='admin_login'),
+
+    # JWT Token Refresh & Profile
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('auth/register/', RegisterView.as_view(), name='user_register'),
     path('auth/profile/', UserProfileView.as_view(), name='user_profile'),
 
     # Cart endpoints
@@ -50,7 +51,7 @@ urlpatterns = [
     path('cart/items/<int:item_id>/', CartItemUpdateView.as_view(), name='cart_item_detail'),
     path('cart/clear/', CartClearView.as_view(), name='cart_clear'),
 
-    # Admin endpoints
+    # Admin Dashboard & Product endpoints
     path('admin/dashboard/', AdminDashboardView.as_view(), name='admin_dashboard'),
     path('admin/customers/', AdminCustomerListView.as_view(), name='admin_customers'),
     path('admin/orders/<str:order_id>/status/', OrderStatusUpdateView.as_view(), name='admin_order_status'),
@@ -69,4 +70,3 @@ urlpatterns = [
     # Router endpoints (categories, products, orders)
     path('', include(router.urls)),
 ]
-

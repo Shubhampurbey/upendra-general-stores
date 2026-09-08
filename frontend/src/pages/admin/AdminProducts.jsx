@@ -148,22 +148,16 @@ const AdminProducts = () => {
     // Build standard FormData for multipart submission
     const productFormData = new FormData();
     productFormData.append('name', formData.name.trim());
-    if (formData.hindi_name) {
-      productFormData.append('hindi_name', formData.hindi_name.trim());
-    }
+    productFormData.append('hindi_name', formData.hindi_name ? formData.hindi_name.trim() : '');
     productFormData.append('category', formData.category);
-    if (formData.description) {
-      productFormData.append('description', formData.description.trim());
-    }
+    productFormData.append('description', formData.description ? formData.description.trim() : '');
     productFormData.append('price', formData.price);
     productFormData.append('unit', formData.unit);
     productFormData.append('min_weight_grams', formData.min_weight_grams || 100);
-    productFormData.append('stock_quantity', formData.stock_quantity || 0);
-    productFormData.append('is_available', formData.is_available);
-    productFormData.append('is_featured', formData.is_featured);
-    if (formData.badge) {
-      productFormData.append('badge', formData.badge.trim());
-    }
+    productFormData.append('stock_quantity', formData.stock_quantity ?? 0);
+    productFormData.append('is_available', formData.is_available ? 'true' : 'false');
+    productFormData.append('is_featured', formData.is_featured ? 'true' : 'false');
+    productFormData.append('badge', formData.badge ? formData.badge.trim() : '');
 
     // Attach image file only if a new file was selected
     if (selectedImageFile) {

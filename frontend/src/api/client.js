@@ -49,9 +49,6 @@ export const API_BASE_URL = getApiBaseUrl();
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
 // Intercept requests to attach JWT access token & handle FormData
@@ -63,6 +60,12 @@ apiClient.interceptors.request.use(
     }
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
+      if (config.headers.common) delete config.headers.common['Content-Type'];
+      if (config.headers.post) delete config.headers.post['Content-Type'];
+      if (config.headers.put) delete config.headers.put['Content-Type'];
+      if (config.headers.patch) delete config.headers.patch['Content-Type'];
+    } else if (!config.headers['Content-Type']) {
+      config.headers['Content-Type'] = 'application/json';
     }
     return config;
   },
