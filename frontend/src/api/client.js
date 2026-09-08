@@ -1,10 +1,51 @@
 import axios from 'axios';
 
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  'http://127.0.0.1:8000/api'
-).replace(/\/+$/, '');
+/**
+ * Normalizes an API base URL so that:
+ * - Trailing slashes are stripped
+ * - Duplicate /api segments are prevented (e.g. /api/api -> /api)
+ * - The URL always ends with exactly '/api'
+ */
+export const normalizeApiBaseUrl = (rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  let url = rawUrl.trim().replace(/\/+$/, '');
+  
+  // Strip duplicate '/api' if repeated
+  while (url.endsWith('/api/api')) {
+    url = url.slice(0, -4);
+  }
+  
+  // Ensure the URL ends with '/api'
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  
+  return url;
+};
+
+/**
+ * Determines the API base URL:
+ * 1. Checks VITE_API_BASE_URL or VITE_API_URL environment variable (normalizing it to ensure '/api' suffix)
+ * 2. In production (e.g. Vercel deployment), falls back to Render backend URL 'https://upendra-general-stores.onrender.com/api'
+ * 3. In local development, falls back to 'http://127.0.0.1:8000/api'
+ */
+export const getApiBaseUrl = () => {
+  const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
+  const envUrl = env.VITE_API_BASE_URL || env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
+    return normalizeApiBaseUrl(envUrl);
+  }
+  
+  // Production fallback: ensures no localhost is used on production deployments
+  if (env.PROD) {
+    return 'https://upendra-general-stores.onrender.com/api';
+  }
+  
+  // Local development default fallback
+  return 'http://127.0.0.1:8000/api';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,

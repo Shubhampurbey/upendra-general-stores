@@ -1,13 +1,10 @@
+import { API_BASE_URL } from '../api/client';
+
 /**
  * Helper to get backend root URL without '/api' suffix
  */
 const getBackendBaseUrl = () => {
-  const apiBase = (
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_URL ||
-    'http://127.0.0.1:8000/api'
-  );
-  return apiBase.replace(/\/api\/?$/, '');
+  return API_BASE_URL.replace(/\/api\/?$/, '');
 };
 
 /**
