@@ -642,8 +642,13 @@ class Command(BaseCommand):
         ]
 
         created_count = 0
+        skipped_count = 0
         for pdata in products_data:
-            p, created = Product.objects.update_or_create(
+            # SAFE SEEDING: get_or_create only inserts if the product does NOT already exist.
+            # Existing products (including any admin-edited price, stock, image, badge, etc.)
+            # are NEVER modified. This makes the seed command fully idempotent and safe to
+            # run on every Render deploy without overwriting production data.
+            p, created = Product.objects.get_or_create(
                 name=pdata['name'],
                 defaults={
                     'hindi_name': pdata['hindi_name'],
@@ -661,8 +666,13 @@ class Command(BaseCommand):
             )
             if created:
                 created_count += 1
+            else:
+                skipped_count += 1
 
-        self.stdout.write(self.style.SUCCESS(f'[OK] {len(products_data)} Products seeded ({created_count} new)'))
+        self.stdout.write(self.style.SUCCESS(
+            f'[OK] Products: {created_count} new created, {skipped_count} existing skipped (not overwritten)'
+        ))
+
 
         # 5. Demo Orders with realistic timelines
         if not Order.objects.exists():

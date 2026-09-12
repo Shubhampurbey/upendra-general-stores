@@ -105,10 +105,11 @@ TEMPLATES = [
 WSGI_APPLICATION = 'upendra_backend.wsgi.application'
 
 # Database Configuration
-# 1. Production: PostgreSQL via DATABASE_URL (e.g., Neon Free tier)
-# 2. Production/Custom: PostgreSQL via individual DB_* environment variables
-# 3. Local optional: MySQL when USE_MYSQL=True
-# 4. Local default fallback: SQLite (upendra_store.sqlite3)
+# Priority order:
+# 1. DATABASE_URL env var  → PostgreSQL (production, e.g. Neon / Render Postgres)
+# 2. USE_MYSQL=True        → MySQL
+# 3. USE_POSTGRES=True / individual DB_* vars → PostgreSQL
+# 4. Local dev fallback    → SQLite  (NEVER used on Render / production)
 def _clean_env_val(val):
     if not val:
         return ''
@@ -126,6 +127,10 @@ DB_USER = _clean_env_val(os.environ.get('DB_USER', ''))
 DB_PASSWORD = _clean_env_val(os.environ.get('DB_PASSWORD', ''))
 DB_HOST = _clean_env_val(os.environ.get('DB_HOST', ''))
 DB_PORT = _clean_env_val(os.environ.get('DB_PORT', ''))
+
+# Detect Render production environment
+# Render always sets RENDER=True and RENDER_SERVICE_ID on hosted services.
+IS_RENDER = os.environ.get('RENDER', '').lower() in ('true', '1', 'yes') or bool(os.environ.get('RENDER_SERVICE_ID', ''))
 
 # If DB_HOST or DB_NAME was accidentally provided as the full postgres connection URL
 if not DATABASE_URL:
@@ -191,13 +196,32 @@ elif (DB_HOST and DB_PORT != '3306') or USE_POSTGRES or DB_ENGINE == 'postgresql
             } if 'neon.tech' in clean_host else {}
         }
     }
+elif IS_RENDER:
+    # Running on Render but DATABASE_URL is not set.
+    # Refuse to start with SQLite on ephemeral Render filesystem — this would cause
+    # silent data loss on every restart. Force a clear startup failure with guidance.
+    raise RuntimeError(
+        "[CONFIGURATION ERROR] The application is running on Render but DATABASE_URL is not set. "
+        "SQLite cannot be used on Render's ephemeral filesystem — all data would be lost on every restart. "
+        "Please add a DATABASE_URL environment variable in your Render dashboard pointing to a "
+        "persistent PostgreSQL database (e.g. Neon free tier at https://neon.tech). "
+        "Example: DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require"
+    )
 else:
+    # Local development only — SQLite is acceptable on developer machines
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'upendra_store.sqlite3',
         }
     }
+
+# Log the active database engine at startup (engine name only — never credentials)
+import logging as _logging
+_db_logger = _logging.getLogger('django')
+_active_engine = DATABASES['default'].get('ENGINE', 'unknown')
+_db_logger.debug(f"[DB] Active database engine: {_active_engine}")
+
 
 
 
