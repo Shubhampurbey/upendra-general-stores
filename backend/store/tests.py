@@ -278,3 +278,43 @@ class AdminAuthAndPermissionsTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('image', response.data)
 
+    def test_customer_password_registration_and_login(self):
+        # 1. Register a new customer with password
+        reg_response = self.client.post('/api/auth/register/', {
+            'full_name': 'Ramesh Kumar',
+            'mobile': '9876543210',
+            'password': 'CustomerPass123!',
+            'city': 'Benipatti'
+        })
+        self.assertEqual(reg_response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(reg_response.data['success'])
+        self.assertIn('tokens', reg_response.data)
+        self.assertEqual(reg_response.data['user']['mobile'], '9876543210')
+
+        # 2. Login with registered mobile and password
+        login_response = self.client.post('/api/auth/login/', {
+            'mobile': '9876543210',
+            'password': 'CustomerPass123!'
+        })
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(login_response.data['success'])
+        self.assertIn('tokens', login_response.data)
+        self.assertEqual(login_response.data['user']['full_name'], 'Ramesh Kumar')
+
+        # 3. Login with wrong password -> rejected
+        bad_login = self.client.post('/api/auth/login/', {
+            'mobile': '9876543210',
+            'password': 'WrongPassword999!'
+        })
+        self.assertEqual(bad_login.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(bad_login.data['success'])
+
+        # 4. Duplicate mobile registration -> rejected
+        dup_reg = self.client.post('/api/auth/register/', {
+            'full_name': 'Duplicate User',
+            'mobile': '9876543210',
+            'password': 'SomePassword123!'
+        })
+        self.assertEqual(dup_reg.status_code, status.HTTP_400_BAD_REQUEST)
+
+

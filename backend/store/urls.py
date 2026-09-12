@@ -3,6 +3,8 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
+    UserLoginView,
+    UserRegisterView,
     SendOTPView,
     VerifyOTPView,
     ResendOTPView,
@@ -33,7 +35,12 @@ router.register(r'products', ProductViewSet, basename='product')
 router.register(r'orders', OrderViewSet, basename='order')
 
 urlpatterns = [
-    # Customer Phone + Real OTP Authentication endpoints
+    # Customer Password-based Authentication endpoints
+    path('auth/login/', UserLoginView.as_view(), name='user_login'),
+    path('auth/register/', UserRegisterView.as_view(), name='user_register'),
+    path('auth/customer-login/', UserLoginView.as_view(), name='customer_login'),
+
+    # Customer Phone + Real OTP Authentication endpoints (legacy/backup)
     path('auth/send-otp/', SendOTPView.as_view(), name='auth_send_otp'),
     path('auth/verify-otp/', VerifyOTPView.as_view(), name='auth_verify_otp'),
     path('auth/resend-otp/', ResendOTPView.as_view(), name='auth_resend_otp'),

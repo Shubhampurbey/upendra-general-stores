@@ -37,6 +37,169 @@ logger = logging.getLogger(__name__)
 
 
 # =====================================================================
+# Customer Password-Based Authentication Views (Login & Registration)
+# =====================================================================
+
+class UserLoginView(views.APIView):
+    """
+    Standard Customer & User Login Endpoint.
+    Authenticates users via Mobile Number or Email + Password.
+    Returns JWT access & refresh tokens and user profile.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        identifier = (
+            request.data.get('mobile', '')
+            or request.data.get('email', '')
+            or request.data.get('username', '')
+            or request.data.get('identifier', '')
+        )
+        password = request.data.get('password', '')
+
+        if not identifier or not password:
+            return Response({
+                'success': False,
+                'message': 'Mobile number / Email and password are required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        ident_str = str(identifier).strip()
+        clean_mob = clean_indian_mobile(ident_str)
+
+        user = None
+        if clean_mob:
+            user = CustomUser.objects.filter(mobile=clean_mob).first()
+        if not user:
+            user = CustomUser.objects.filter(email__iexact=ident_str.lower()).first()
+        if not user and not clean_mob:
+            user = CustomUser.objects.filter(mobile=ident_str).first()
+
+        if not user:
+            return Response({
+                'success': False,
+                'message': 'No account found with this mobile number or email. Please check your credentials or create an account.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user.check_password(password):
+            return Response({
+                'success': False,
+                'message': 'Incorrect password. Please try again.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user.is_active:
+            return Response({
+                'success': False,
+                'message': 'Your account has been deactivated. Please contact store management.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Ensure customer cart exists
+        Cart.objects.get_or_create(user=user)
+
+        # Issue JWT Access & Refresh Tokens
+        refresh = RefreshToken.for_user(user)
+        user_data = UserProfileSerializer(user).data
+
+        return Response({
+            'success': True,
+            'message': f"Namaste, {user.full_name}! Login successful.",
+            'tokens': {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            },
+            'user': user_data
+        }, status=status.HTTP_200_OK)
+
+
+class UserRegisterView(views.APIView):
+    """
+    Standard Customer Registration Endpoint.
+    Registers a new user with Full Name, 10-digit Mobile Number, and Password.
+    Returns JWT access & refresh tokens and logs in the new user immediately.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        full_name = request.data.get('full_name', '').strip()
+        raw_mobile = request.data.get('mobile', '')
+        password = request.data.get('password', '')
+        email = request.data.get('email', '').strip()
+        address = request.data.get('address', '').strip()
+        village_area = request.data.get('village_area', '').strip()
+        city = request.data.get('city', '').strip() or 'Benipatti'
+        state = request.data.get('state', '').strip() or 'Bihar'
+        pincode = request.data.get('pincode', '').strip() or '847213'
+
+        if not full_name or len(full_name) < 2:
+            return Response({
+                'success': False,
+                'message': 'Please enter your valid full name.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        clean_mobile = clean_indian_mobile(raw_mobile)
+        if not clean_mobile or len(clean_mobile) != 10 or not clean_mobile[0] in '6789':
+            return Response({
+                'success': False,
+                'message': 'Please enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not password or len(password) < 6:
+            return Response({
+                'success': False,
+                'message': 'Password must be at least 6 characters long.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check existing mobile
+        if CustomUser.objects.filter(mobile=clean_mobile).exists():
+            return Response({
+                'success': False,
+                'message': 'An account with this mobile number already exists. Please sign in with your password.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check existing email if provided
+        email_clean = None
+        if email:
+            email_clean = email.lower()
+            if CustomUser.objects.filter(email__iexact=email_clean).exists():
+                return Response({
+                    'success': False,
+                    'message': 'An account with this email address already exists.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create user
+        user = CustomUser(
+            mobile=clean_mobile,
+            email=email_clean,
+            full_name=full_name,
+            role='customer',
+            is_staff=False,
+            is_superuser=False,
+            address=address,
+            village_area=village_area,
+            city=city,
+            state=state,
+            pincode=pincode
+        )
+        user.set_password(password)
+        user.save()
+
+        Cart.objects.get_or_create(user=user)
+
+        # Issue JWT Access & Refresh Tokens
+        refresh = RefreshToken.for_user(user)
+        user_data = UserProfileSerializer(user).data
+
+        return Response({
+            'success': True,
+            'message': f"Welcome to Upendra General Stores, {user.full_name}! Your account is ready.",
+            'tokens': {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            },
+            'user': user_data
+        }, status=status.HTTP_201_CREATED)
+
+
+# =====================================================================
 # Customer Phone + Real OTP Authentication Views
 # =====================================================================
 

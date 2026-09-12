@@ -23,7 +23,51 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  // Customer Step 1: Send OTP
+  // Customer & User Password-Based Login
+  const login = async (identifier, password) => {
+    try {
+      const res = await AuthService.login(identifier, password);
+      const { tokens, user: userData, message } = res;
+
+      if (tokens?.access) {
+        localStorage.setItem('upendra_access_token', tokens.access);
+        localStorage.setItem('upendra_refresh_token', tokens.refresh);
+        localStorage.setItem('upendra_user', JSON.stringify(userData));
+        setUser(userData);
+      }
+
+      toast.success(message || `Namaste, ${userData.full_name}! Login successful.`);
+      return userData;
+    } catch (err) {
+      const msg = err.response?.data?.message || err.response?.data?.detail || 'Invalid mobile number/email or password.';
+      toast.error(msg);
+      throw err;
+    }
+  };
+
+  // Customer Password-Based Registration
+  const register = async (userData) => {
+    try {
+      const res = await AuthService.register(userData);
+      const { tokens, user: userDataProfile, message } = res;
+
+      if (tokens?.access) {
+        localStorage.setItem('upendra_access_token', tokens.access);
+        localStorage.setItem('upendra_refresh_token', tokens.refresh);
+        localStorage.setItem('upendra_user', JSON.stringify(userDataProfile));
+        setUser(userDataProfile);
+      }
+
+      toast.success(message || `Welcome to Upendra General Stores, ${userDataProfile.full_name}!`);
+      return userDataProfile;
+    } catch (err) {
+      const msg = err.response?.data?.message || err.response?.data?.detail || 'Registration failed. Please check details.';
+      toast.error(msg);
+      throw err;
+    }
+  };
+
+  // Customer Step 1: Send OTP (Legacy fallback)
   const sendOtp = async (mobile, fullName = '') => {
     try {
       const res = await AuthService.sendOtp(mobile, fullName);
@@ -38,7 +82,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Customer Step 2: Verify OTP
+  // Customer Step 2: Verify OTP (Legacy fallback)
   const verifyOtp = async (sessionToken, mobile, otp, fullName = '') => {
     try {
       const res = await AuthService.verifyOtp(sessionToken, mobile, otp, fullName);
@@ -60,7 +104,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Customer Resend OTP
+  // Customer Resend OTP (Legacy fallback)
   const resendOtp = async (sessionToken, mobile) => {
     try {
       const res = await AuthService.resendOtp(sessionToken, mobile);
@@ -125,6 +169,8 @@ export const AuthProvider = ({ children }) => {
         loading,
         isAuthenticated: !!user,
         isAdmin: !!(user?.role === 'admin' || user?.is_admin),
+        login,
+        register,
         sendOtp,
         verifyOtp,
         resendOtp,

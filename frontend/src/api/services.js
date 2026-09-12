@@ -1,7 +1,21 @@
 import apiClient from './client';
 
 export const AuthService = {
-  // Customer Mobile + Real SMS OTP Authentication
+  // Customer & User Password-Based Authentication
+  login: async (identifier, password) => {
+    const response = await apiClient.post('/auth/login/', {
+      identifier,
+      password,
+    });
+    return response.data;
+  },
+
+  register: async (userData) => {
+    const response = await apiClient.post('/auth/register/', userData);
+    return response.data;
+  },
+
+  // Customer Mobile + Real SMS OTP Authentication (Legacy fallback)
   sendOtp: async (mobile, fullName = '') => {
     const response = await apiClient.post('/auth/send-otp/', {
       mobile,
