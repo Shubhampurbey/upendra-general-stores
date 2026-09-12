@@ -45,35 +45,35 @@ const Home = () => {
   }, []);
 
   return (
-    <div className="space-y-12 sm:space-y-16 pb-12">
+    <div className="space-y-10 sm:space-y-16 pb-8 sm:pb-12 w-full max-w-full overflow-hidden">
       
       {/* 1. Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-kirana-sand/90 via-kirana-cream to-white pt-6 pb-12 sm:pb-20 border-b border-kirana-beige/70">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+      <section className="relative overflow-hidden bg-gradient-to-b from-kirana-sand/90 via-kirana-cream to-white pt-4 sm:pt-6 pb-10 sm:pb-20 border-b border-kirana-beige/70 w-full">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12 items-center">
             
             {/* Left Content */}
-            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 bg-gradient-to-r from-kirana-orange-soft to-amber-100/70 border border-kirana-orange-border px-3.5 py-1.5 rounded-full text-xs font-extrabold text-kirana-orange-dark shadow-sm">
-                <Sparkles className="w-4 h-4 text-kirana-orange" />
-                <span>UPENDRA GENERAL STORES • ESTABLISHED 1998</span>
+            <div className="lg:col-span-7 space-y-4 sm:space-y-6 text-center lg:text-left w-full">
+              <div className="inline-flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-kirana-orange-soft to-amber-100/70 border border-kirana-orange-border px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-extrabold text-kirana-orange-dark shadow-sm max-w-full truncate">
+                <Sparkles className="w-3.5 h-3.5 text-kirana-orange flex-shrink-0" />
+                <span className="truncate">UPENDRA GENERAL STORES • ESTABLISHED 1998</span>
               </div>
 
-              <h1 className="font-outfit font-black text-3xl sm:text-5xl lg:text-6xl text-kirana-brown-dark tracking-tight leading-[1.1]">
+              <h1 className="font-outfit font-black text-2xl xs:text-3xl sm:text-5xl lg:text-6xl text-kirana-brown-dark tracking-tight leading-[1.15]">
                 Your Trusted <br className="hidden sm:inline" />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-kirana-orange via-amber-600 to-kirana-green">
                   Local Grocery Store
                 </span>
               </h1>
 
-              <p className="text-sm sm:text-base text-kirana-brown-light max-w-xl mx-auto lg:mx-0 leading-relaxed font-medium">
+              <p className="text-xs sm:text-base text-kirana-brown-light max-w-xl mx-auto lg:mx-0 leading-relaxed font-medium">
                 Fresh groceries, handpicked pulses, aromatic whole spices, crispy snacks, and daily essentials — all in one place. Choose exact custom quantities (100g, 250g, 1kg) with fast doorstep delivery.
               </p>
 
-              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5 pt-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-start gap-3 sm:gap-3.5 pt-2 w-full sm:w-auto">
                 <Link
                   to="/products"
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-kirana-orange to-kirana-orange-dark hover:from-kirana-orange-dark hover:to-kirana-orange text-white text-sm font-black tracking-wide shadow-lg shadow-kirana-orange/30 flex items-center justify-center gap-2 transition-all btn-press"
+                  className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-3.5 rounded-2xl bg-gradient-to-r from-kirana-orange to-kirana-orange-dark hover:from-kirana-orange-dark hover:to-kirana-orange text-white text-xs sm:text-sm font-black tracking-wide shadow-lg shadow-kirana-orange/30 flex items-center justify-center gap-2 transition-all btn-press"
                 >
                   <ShoppingBag className="w-4 h-4" />
                   <span>Shop Now</span>
@@ -81,7 +81,7 @@ const Home = () => {
 
                 <Link
                   to="/categories"
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-white hover:bg-kirana-sand text-kirana-brown-dark border-2 border-kirana-beige text-sm font-bold shadow-sm flex items-center justify-center gap-2 transition-all"
+                  className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-3.5 rounded-2xl bg-white hover:bg-kirana-sand text-kirana-brown-dark border-2 border-kirana-beige text-xs sm:text-sm font-bold shadow-sm flex items-center justify-center gap-2 transition-all"
                 >
                   <span>View Categories</span>
                   <ArrowRight className="w-4 h-4 text-kirana-orange" />
@@ -89,29 +89,29 @@ const Home = () => {
               </div>
 
               {/* Quick Trust Highlights */}
-              <div className="grid grid-cols-3 gap-1.5 sm:gap-3 pt-4 border-t border-kirana-beige/80 max-w-lg mx-auto lg:mx-0 text-left">
+              <div className="grid grid-cols-1 xs:grid-cols-3 gap-2 sm:gap-3 pt-4 border-t border-kirana-beige/80 max-w-lg mx-auto lg:mx-0 text-left">
                 <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                   <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-kirana-green flex-shrink-0" />
-                  <span className="text-[10px] sm:text-[11px] font-bold text-kirana-brown-dark leading-tight">100% Pure Dals & Spices</span>
+                  <span className="text-[11px] sm:text-[11px] font-bold text-kirana-brown-dark leading-tight">100% Pure Dals & Spices</span>
                 </div>
                 <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                   <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-kirana-orange flex-shrink-0" />
-                  <span className="text-[10px] sm:text-[11px] font-bold text-kirana-brown-dark leading-tight">Custom Grams / Kg</span>
+                  <span className="text-[11px] sm:text-[11px] font-bold text-kirana-brown-dark leading-tight">Custom Grams / Kg</span>
                 </div>
                 <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                   <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 flex-shrink-0" />
-                  <span className="text-[10px] sm:text-[11px] font-bold text-kirana-brown-dark leading-tight">Cash on Delivery</span>
+                  <span className="text-[11px] sm:text-[11px] font-bold text-kirana-brown-dark leading-tight">Cash on Delivery</span>
                 </div>
               </div>
             </div>
 
             {/* Right Hero Image Card */}
-            <div className="lg:col-span-5 relative max-w-full">
-              <div className="relative mx-auto max-w-md lg:max-w-none">
+            <div className="lg:col-span-5 relative w-full max-w-full">
+              <div className="relative mx-auto max-w-md lg:max-w-none w-full">
                 {/* Decorative background glow */}
                 <div className="absolute inset-0 bg-gradient-to-r from-kirana-orange/20 to-kirana-green/15 rounded-3xl blur-xl opacity-60 pointer-events-none"></div>
 
-                <div className="relative rounded-3xl overflow-hidden shadow-2xl border-2 sm:border-4 border-white aspect-[3/2] bg-kirana-sand group w-full">
+                <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl sm:shadow-2xl border-2 sm:border-4 border-white aspect-[3/2] bg-kirana-sand group w-full">
                   <img
                     src="/assets/images/hero.jpg"
                     alt="Upendra General Stores - Real Shop Photo"
@@ -119,27 +119,27 @@ const Home = () => {
                     loading="eager"
                   />
                   {/* Subtle bottom badge that preserves full view of the store and owner */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent flex items-end justify-between p-3 sm:p-5 text-white pointer-events-none">
-                    <div className="bg-black/50 backdrop-blur-md px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl sm:rounded-2xl border border-white/20">
-                      <span className="text-[10px] sm:text-xs font-bold font-outfit text-white flex items-center gap-1 sm:gap-1.5">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent flex items-end justify-between p-2.5 sm:p-5 text-white pointer-events-none">
+                    <div className="bg-black/50 backdrop-blur-md px-2 sm:px-3.5 py-0.5 sm:py-1.5 rounded-lg sm:rounded-2xl border border-white/20">
+                      <span className="text-[9px] sm:text-xs font-bold font-outfit text-white flex items-center gap-1 sm:gap-1.5">
                         <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                         <span>Shop Counter & Storefront</span>
                       </span>
                     </div>
-                    <span className="bg-kirana-orange text-white text-[9px] sm:text-[10px] uppercase font-black px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl shadow-sm">
+                    <span className="bg-kirana-orange text-white text-[9px] sm:text-[10px] uppercase font-black px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-xl shadow-sm">
                       Verified Store
                     </span>
                   </div>
                 </div>
 
                 {/* Floating Quick Feature Badge - Fully responsive, stays bounded within container on mobile (320px+) */}
-                <div className="mt-3 sm:mt-0 sm:absolute sm:bottom-4 sm:-left-6 bg-white/95 backdrop-blur-md p-2.5 sm:p-3 rounded-2xl shadow-kirana sm:shadow-kirana-lg border border-kirana-beige flex items-center gap-2.5 sm:gap-3 max-w-full sm:max-w-xs sm:animate-float">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-kirana-green text-white flex items-center justify-center font-black flex-shrink-0">
+                <div className="mt-3 sm:mt-0 sm:absolute sm:bottom-4 sm:-left-6 bg-white/95 backdrop-blur-md p-2.5 sm:p-3 rounded-2xl shadow-kirana sm:shadow-kirana-lg border border-kirana-beige flex items-center gap-2.5 sm:gap-3 w-full sm:max-w-xs sm:animate-float">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-kirana-green text-white flex items-center justify-center font-black flex-shrink-0">
                     <Scale className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-xs font-bold text-kirana-brown-dark block leading-tight truncate sm:whitespace-normal">Exact Grams Weighing</span>
-                    <span className="text-[10px] sm:text-[11px] text-kirana-brown-light leading-tight block truncate sm:whitespace-normal">Order 50g, 100g, 250g or custom</span>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs font-bold text-kirana-brown-dark block leading-tight">Exact Grams Weighing</span>
+                    <span className="text-[10px] sm:text-[11px] text-kirana-brown-light leading-tight block">Order 50g, 100g, 250g or custom</span>
                   </div>
                 </div>
               </div>

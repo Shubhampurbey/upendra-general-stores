@@ -168,18 +168,25 @@ const AdminProducts = () => {
       setIsSubmitting(true);
       if (editingProduct) {
         await ProductService.update(editingProduct.id, productFormData);
-        toast.success(`Updated ${formData.name} successfully!`);
+        if (selectedImageFile) {
+          toast.success(`Product image and details updated successfully!`);
+        } else {
+          toast.success(`Product "${formData.name}" updated successfully!`);
+        }
       } else {
         await ProductService.create(productFormData);
-        toast.success(`Added new product: ${formData.name} successfully!`);
+        toast.success(`Product "${formData.name}" created successfully!`);
       }
       setModalOpen(false);
-      fetchProducts();
+      await fetchProducts();
     } catch (err) {
       console.error('Save product error:', err);
       const errMsg = err.response?.data?.detail || 
                      (Array.isArray(err.response?.data?.image) ? err.response?.data?.image[0] : null) || 
-                     'Error saving product. Please check form fields.';
+                     (typeof err.response?.data?.image === 'string' ? err.response?.data?.image : null) ||
+                     (Array.isArray(err.response?.data?.price) ? err.response?.data?.price[0] : null) ||
+                     (Array.isArray(err.response?.data?.name) ? err.response?.data?.name[0] : null) ||
+                     'Unable to update product. Please check form fields and try again.';
       toast.error(errMsg);
     } finally {
       setIsSubmitting(false);

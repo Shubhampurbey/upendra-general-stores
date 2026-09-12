@@ -86,19 +86,19 @@ const Header = () => {
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-kirana-beige/80 transition-all">
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-kirana-beige/80 transition-all w-full max-w-full overflow-hidden">
       {/* 1. Top Announcement Bar */}
-      <div className="bg-gradient-to-r from-kirana-green via-kirana-green-dark to-kirana-green text-white text-xs sm:text-sm py-1.5 px-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2 truncate">
-            <span className="bg-kirana-orange text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full tracking-wide inline-flex items-center gap-1">
-              <Sparkles className="w-3 h-3" /> Special
+      <div className="w-full overflow-hidden bg-gradient-to-r from-kirana-green via-kirana-green-dark to-kirana-green text-white text-[11px] sm:text-xs py-1.5 px-3 sm:px-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+            <span className="bg-kirana-orange text-white text-[9px] sm:text-[10px] uppercase font-bold px-1.5 sm:px-2 py-0.5 rounded-full tracking-wide inline-flex items-center gap-1 flex-shrink-0">
+              <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> Special
             </span>
-            <span className="font-medium truncate">
+            <span className="font-medium text-[11px] sm:text-xs truncate block min-w-0">
               Pure Mandi Spices & Groceries • Free Delivery above ₹249 • Open 7 AM - 9:30 PM
             </span>
           </div>
-          <div className="hidden md:flex items-center space-x-6 text-xs text-kirana-sand font-medium">
+          <div className="hidden md:flex items-center space-x-6 text-xs text-kirana-sand font-medium flex-shrink-0">
             <a href="tel:7295077559" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Phone className="w-3.5 h-3.5 text-kirana-orange-light" />
               Order on Call: <strong className="text-white">7295077559</strong>
@@ -112,24 +112,24 @@ const Header = () => {
       </div>
 
       {/* 2. Main Navigation Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-        <div className="flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 w-full">
+        <div className="flex items-center justify-between gap-2 sm:gap-4 w-full">
           
           {/* Logo & Store Identity */}
-          <Link to="/" className="flex items-center gap-3 group flex-shrink-0">
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-kirana-orange to-kirana-orange-dark flex items-center justify-center shadow-md shadow-kirana-orange/20 text-white font-black text-xl group-hover:scale-105 transition-transform">
-              <Store className="w-6 h-6" />
+          <Link to="/" className="flex items-center gap-2 sm:gap-3 group flex-shrink-0 min-w-0">
+            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-br from-kirana-orange to-kirana-orange-dark flex items-center justify-center shadow-md shadow-kirana-orange/20 text-white font-black text-lg sm:text-xl group-hover:scale-105 transition-transform flex-shrink-0">
+              <Store className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-outfit font-black text-lg sm:text-xl text-kirana-brown-dark tracking-tight leading-none group-hover:text-kirana-orange transition-colors">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="font-outfit font-black text-base sm:text-lg lg:text-xl text-kirana-brown-dark tracking-tight leading-none group-hover:text-kirana-orange transition-colors">
                   UPENDRA
                 </span>
-                <span className="bg-kirana-green/10 text-kirana-green text-[10px] font-bold px-1.5 py-0.5 rounded border border-kirana-green/20">
+                <span className="bg-kirana-green/10 text-kirana-green text-[9px] sm:text-[10px] font-bold px-1 sm:px-1.5 py-0.2 sm:py-0.5 rounded border border-kirana-green/20 flex-shrink-0">
                   ESTD. 1998
                 </span>
               </div>
-              <span className="block text-[11px] sm:text-xs font-semibold text-kirana-brown-light tracking-wide uppercase">
+              <span className="block text-[9px] sm:text-xs font-semibold text-kirana-brown-light tracking-wide uppercase truncate">
                 General Stores & Kirana
               </span>
             </div>
@@ -218,7 +218,7 @@ const Header = () => {
           </div>
 
           {/* Right Action Icons & Controls */}
-          <div className="flex items-center space-x-3 sm:space-x-4">
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
             
             {/* Delivery Location Pill */}
             <div className="hidden xl:flex items-center gap-2 bg-kirana-cream px-3 py-1.5 rounded-full border border-kirana-beige text-xs">
@@ -229,13 +229,13 @@ const Header = () => {
             {/* Cart Trigger Button */}
             <button
               onClick={() => setIsCartOpen(true)}
-              className="relative flex items-center gap-2 bg-kirana-orange/10 hover:bg-kirana-orange/20 text-kirana-orange border border-kirana-orange/30 px-3.5 py-2 rounded-2xl transition-all btn-press group"
+              className="relative flex items-center gap-1.5 sm:gap-2 bg-kirana-orange/10 hover:bg-kirana-orange/20 text-kirana-orange border border-kirana-orange/30 p-2 sm:px-3.5 sm:py-2 rounded-xl sm:rounded-2xl transition-all btn-press group flex-shrink-0"
               aria-label="Open Cart"
             >
               <div className="relative">
-                <ShoppingBag className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 group-hover:scale-110 transition-transform" />
                 {totalItemCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-kirana-orange text-white text-[11px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-sm">
+                  <span className="absolute -top-2 -right-2 bg-kirana-orange text-white text-[10px] sm:text-[11px] font-black w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center shadow-sm">
                     {totalItemCount}
                   </span>
                 )}
@@ -251,14 +251,15 @@ const Header = () => {
             </button>
 
             {/* User Account / Login */}
-            <div ref={userMenuRef} className="relative">
+            <div ref={userMenuRef} className="relative flex-shrink-0">
               {isAuthenticated ? (
                 <div>
                   <button
                     onClick={() => setUserMenuOpen(!userMenuOpen)}
-                    className="flex items-center gap-2 bg-kirana-sand/80 hover:bg-kirana-sand text-kirana-brown-dark px-2.5 py-1.5 rounded-2xl border border-kirana-beige transition-all btn-press text-xs font-semibold"
+                    className="flex items-center gap-1.5 bg-kirana-sand/80 hover:bg-kirana-sand text-kirana-brown-dark p-1 sm:px-2.5 sm:py-1.5 rounded-xl sm:rounded-2xl border border-kirana-beige transition-all btn-press text-xs font-semibold"
+                    aria-label="User Account Menu"
                   >
-                    <div className="w-7 h-7 rounded-full bg-kirana-green text-white flex items-center justify-center font-bold text-xs overflow-hidden border border-kirana-beige shadow-sm">
+                    <div className="w-7 h-7 rounded-full bg-kirana-green text-white flex items-center justify-center font-bold text-xs overflow-hidden border border-kirana-beige shadow-sm flex-shrink-0">
                       {getUserAvatarUrl(user?.profile_image) ? (
                         <img
                           src={getUserAvatarUrl(user.profile_image)}
@@ -273,11 +274,11 @@ const Header = () => {
                       )}
                     </div>
                     <span className="hidden md:inline max-w-[100px] truncate">{user?.full_name || 'Account'}</span>
-                    <ChevronDown className="w-3.5 h-3.5 text-kirana-brown-muted" />
+                    <ChevronDown className="w-3.5 h-3.5 text-kirana-brown-muted hidden sm:inline" />
                   </button>
 
                   {userMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-kirana-lg border border-kirana-beige py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                    <div className="absolute right-0 mt-2 w-52 sm:w-56 bg-white rounded-2xl shadow-kirana-lg border border-kirana-beige py-2 z-50 animate-in fade-in slide-in-from-top-2">
                       <div className="px-4 py-2 border-b border-kirana-sand flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-full bg-kirana-green text-white flex items-center justify-center font-bold text-sm overflow-hidden border border-kirana-beige flex-shrink-0">
                           {getUserAvatarUrl(user?.profile_image) ? (
@@ -341,25 +342,23 @@ const Header = () => {
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <Link
-                    to="/signin"
-                    className="flex items-center gap-1.5 bg-gradient-to-r from-kirana-green to-kirana-green-dark hover:from-kirana-green-dark hover:to-kirana-green text-white px-3.5 py-2 rounded-2xl text-xs font-bold shadow-sm transition-all btn-press"
-                  >
-                    <User className="w-4 h-4" />
-                    <span>Sign In</span>
-                  </Link>
-                </div>
+                <Link
+                  to="/signin"
+                  className="flex items-center gap-1 bg-gradient-to-r from-kirana-green to-kirana-green-dark hover:from-kirana-green-dark hover:to-kirana-green text-white px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-bold shadow-sm transition-all btn-press flex-shrink-0"
+                >
+                  <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span>Sign In</span>
+                </Link>
               )}
             </div>
 
             {/* Mobile Menu Hamburger */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 text-kirana-brown-dark hover:bg-kirana-sand rounded-xl border border-kirana-beige"
+              className="lg:hidden p-1.5 sm:p-2 text-kirana-brown-dark hover:bg-kirana-sand rounded-xl border border-kirana-beige flex-shrink-0"
               aria-label="Toggle menu"
             >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              {mobileMenuOpen ? <X className="w-4 h-4 sm:w-5 sm:h-5" /> : <Menu className="w-4 h-4 sm:w-5 sm:h-5" />}
             </button>
           </div>
         </div>

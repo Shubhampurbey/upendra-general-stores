@@ -39,6 +39,18 @@ class ProductSerializer(serializers.ModelSerializer):
             'is_available', 'is_featured', 'image', 'badge', 'created_at', 'updated_at'
         )
 
+    def validate_image(self, value):
+        if value and hasattr(value, 'size'):
+            # Max 5MB
+            if value.size > 5 * 1024 * 1024:
+                raise serializers.ValidationError("Image size is too large. Maximum allowed size is 5MB.")
+            # Validate extension
+            valid_extensions = ('.jpg', '.jpeg', '.png', '.webp')
+            name = getattr(value, 'name', '')
+            if name and not name.lower().endswith(valid_extensions):
+                raise serializers.ValidationError("Please upload a valid product image (JPG, JPEG, PNG, or WEBP).")
+        return value
+
     def to_internal_value(self, data):
         # Create a mutable copy if QueryDict or dict
         mutable_data = data.copy() if hasattr(data, 'copy') else dict(data)

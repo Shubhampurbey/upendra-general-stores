@@ -83,11 +83,11 @@ function AppLayout({ children }) {
   const isAdminRoute = location.pathname.startsWith('/admin') && location.pathname !== '/admin-login';
 
   return (
-    <div className="min-h-screen flex flex-col bg-kirana-cream text-kirana-brown-dark font-sans selection:bg-kirana-orange selection:text-white">
+    <div className="min-h-screen flex flex-col bg-kirana-cream text-kirana-brown-dark font-sans selection:bg-kirana-orange selection:text-white max-w-full overflow-x-hidden">
       {!isAdminRoute && <Header />}
-      <div className="flex-1">
+      <main className={`flex-1 ${isAdminRoute ? '' : 'pb-20 md:pb-0'}`}>
         {children}
-      </div>
+      </main>
       {!isAdminRoute && <Footer />}
       {!isAdminRoute && <MobileNav />}
       <CartDrawer />

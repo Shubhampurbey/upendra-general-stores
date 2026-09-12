@@ -39,8 +39,8 @@ const CartDrawer = () => {
         className="absolute inset-0 bg-kirana-brown-dark/60 backdrop-blur-sm transition-opacity"
       />
 
-      <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
-        <div className="w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between border-l border-kirana-beige animate-in slide-in-from-right duration-300">
+      <div className="fixed inset-y-0 right-0 max-w-full flex pl-4 sm:pl-10">
+        <div className="w-full max-w-md bg-white shadow-2xl flex flex-col justify-between border-l border-kirana-beige animate-in slide-in-from-right duration-300">
           
           {/* 1. Header */}
           <div className="p-4 sm:p-5 bg-gradient-to-r from-kirana-sand via-white to-kirana-sand border-b border-kirana-beige flex items-center justify-between">

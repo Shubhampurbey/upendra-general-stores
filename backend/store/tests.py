@@ -203,3 +203,78 @@ class AdminAuthAndPermissionsTestCase(TestCase):
             'password': 'any'
         })
         self.assertEqual(cust_resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_admin_product_image_upload_and_update(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_authenticate(user=self.admin)
+
+        # 1x1 transparent PNG file
+        small_gif = (
+            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00'
+            b'\xff\xff\xff\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00'
+            b'\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b'
+        )
+        test_image = SimpleUploadedFile("fresh_haldi.png", small_gif, content_type="image/png")
+
+        # PATCH product with multipart image
+        response = self.client.patch(
+            f'/api/products/{self.product.id}/',
+            {
+                'name': 'Haldi Powder Fresh Mandi',
+                'price': '220.00',
+                'category': self.category.id,
+                'image': test_image,
+            },
+            format='multipart'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.product.refresh_from_db()
+        self.assertTrue(bool(self.product.image))
+        self.assertIn('fresh_haldi', str(self.product.image))
+        self.assertIn('/media/', response.data.get('image', ''))
+
+    def test_admin_product_edit_without_image_preserves_old_image(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_authenticate(user=self.admin)
+
+        small_gif = (
+            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00'
+            b'\xff\xff\xff\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00'
+            b'\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b'
+        )
+        test_image = SimpleUploadedFile("initial_image.jpg", small_gif, content_type="image/jpeg")
+        self.product.image = test_image
+        self.product.save()
+
+        initial_image_name = str(self.product.image)
+
+        # Edit product details without providing a new image file
+        response = self.client.patch(
+            f'/api/products/{self.product.id}/',
+            {
+                'name': 'Haldi Powder Premium Batch',
+                'price': '260.00',
+                'category': self.category.id,
+            },
+            format='multipart'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.product.refresh_from_db()
+        self.assertEqual(str(self.product.image), initial_image_name)
+        self.assertEqual(self.product.name, 'Haldi Powder Premium Batch')
+
+    def test_product_image_invalid_extension_rejected(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_authenticate(user=self.admin)
+
+        bad_file = SimpleUploadedFile("malicious.exe", b"executable_content", content_type="application/octet-stream")
+        response = self.client.patch(
+            f'/api/products/{self.product.id}/',
+            {
+                'image': bad_file,
+            },
+            format='multipart'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('image', response.data)
+
